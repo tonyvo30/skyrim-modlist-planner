@@ -5,8 +5,8 @@ dependency graph with categories, hierarchy levels, any-of (OR) requirements,
 symmetric conflicts, MO2 import/reconcile with a per-separator picker, and a
 severity-filtered message panel.
 
-Migrated from a Claude artifact to a plain multi-file static app so it can be hosted
-on GitHub Pages and version-controlled.
+Migrated from a Claude artifact to a plain multi-file static app that runs locally
+and is version-controlled.
 
 ## Run locally
 
@@ -22,7 +22,7 @@ mostly works but a local server avoids fetch/CORS quirks.)
 ## Data & persistence
 
 - The mod graph lives in your **browser** (`localStorage` key `skyrim-deps-v1`) —
-  it is **not** committed to this repo (public repo, "public app / private data").
+  it is **not** committed to this repo (git-ignored under `private/`).
 - **Back up or move between devices** with **Export JSON** (downloads a file) and
   **Import JSON** (Replace catalog).
 - Seed your graph from a Mod Organizer 2 profile with **Import MO2** (`modlist.txt`),
