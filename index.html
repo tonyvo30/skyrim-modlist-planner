@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Modlist Dependency Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>Dependency Planner</h1>
+    <span class="tag">Skyrim SE · 1.5.97</span>
+  </div>
+  <div class="stats">
+    <span class="stat" id="s-total">— mods</span>
+    <span class="stat" id="s-enabled">— on</span>
+    <span class="stat err zero" id="s-err">0 errors</span>
+    <span class="stat warnc zero" id="s-warn">0 warnings</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="actions">
+    <span class="persist local" id="persist"><span class="dot"></span><span id="persist-t">local</span></span>
+    <button class="btn" id="btn-import">Import MO2</button>
+    <button class="btn" id="btn-reconcile" title="Find planner mods not in your MO2 profile">Reconcile</button>
+    <button class="btn" id="btn-export">Export JSON</button>
+    <button class="btn" id="btn-importjson">Import JSON</button>
+    <button class="btn primary" id="btn-add">+ Add mod</button>
+  </div>
+</header>
+
+<main>
+  <div id="graphpane">
+    <div class="graph-overlay">
+      <button class="btn" id="lay-tree">Hierarchy</button>
+      <button class="btn" id="lay-force">Force</button>
+      <button class="btn" id="fit">Fit</button>
+      <button class="btn" id="toggle-root">Skyrim root: on</button>
+      <button class="btn" id="btn-adult" title="Cycle: show all → only adult → hide adult">Adult: all</button>
+      <button class="btn" id="toggle-sizedeps" title="Force view only — scale each node by how many mods depend on it">Size by deps: off</button>
+    </div>
+    <div id="cy"></div>
+    <div class="graph-fallback" id="gfb">Graph library didn't load (offline / blocked). The mod list, dependency editing, and validation on the right still work fully.</div>
+    <div class="legend2" id="legend2">
+      <button class="legend-toggle" id="legend-toggle" title="Minimize legend" aria-label="Toggle legend">Legend -</button>
+      <span class="legend-body" id="legend-body" style="display:contents">
+      <span><i class="lk" style="border-top-color:#7f93a6"></i>requires</span>
+      <span><i class="lk" style="border-top-color:#e0685f;border-top-style:dashed"></i>conflict</span>
+      <span><i class="lk" style="border-top-color:#6c7d8c;border-top-style:dotted"></i>load after</span>
+      <span><i class="lk" style="border-top-color:#e0a94e;border-top-style:dashed"></i>patches</span>
+      <span><i class="lk" style="border-top-color:#69c07a;border-top-style:dashed"></i>any-of</span>
+      <span><i class="lk" style="border-top-color:#a98fd4;border-top-style:dashed"></i>any-of (exclusive)</span>
+      <span style="opacity:.6">·</span>
+      <span id="cat-legend" style="display:contents"></span>
+      <span><i class="ld" style="background:#e0685f;outline:2px solid #e0685f;outline-offset:1px"></i>has issue</span>
+      </span>
+    </div>
+  </div>
+
+  <aside>
+    <div class="tabs">
+      <button class="tab active" data-tab="warnings">Messages <span class="badge" id="b-warn">0</span></button>
+      <button class="tab" data-tab="list">Mods <span class="badge" id="b-list">0</span></button>
+      <button class="tab" data-tab="inspector">Inspector</button>
+    </div>
+    <div class="panel active" id="panel-warnings"></div>
+    <div class="panel" id="panel-list"></div>
+    <div class="panel" id="panel-inspector"></div>
+  </aside>
+</main>
+
+<div class="modal-bg" id="modal-import">
+  <div class="modal">
+    <h3>Import from Mod Organizer 2</h3>
+    <p>Load or paste your profile's <code>modlist.txt</code>. Separators, prefixes and the Bashed Patch are handled automatically, and known mods are wired to their dependencies on the way in.</p>
+    <p class="hint" style="margin:-6px 0 14px;color:var(--frost-dim)">↳ After loading, tick which separators to import below — <b>Output</b> and <b>WIP</b> groups are unchecked by default (generated files / scratch, not planning nodes).</p>
+    <div class="mrow">
+      <input type="file" id="mo2-file" accept=".txt">
+      <span class="hint">modlist.txt — or paste below</span>
+    </div>
+    <textarea id="mo2-text" placeholder="+More Informative Console&#10;+SSE Engine Fixes&#10;-UI_separator&#10;*Creation Club: ccBGSSSE037-Curios"></textarea>
+    <div class="mrow" style="margin-top:12px;flex-direction:column;align-items:flex-start;gap:5px">
+      <label style="font-size:12px;color:var(--muted)">Mods folder <span class="hint">(optional — reads each mod's real category from meta.ini)</span></label>
+      <input type="file" id="mo2-mods" webkitdirectory directory multiple>
+      <span class="hint" id="mo2-mods-status"></span>
+    </div>
+    <div class="mrow" style="margin-top:12px">
+      <label><input type="checkbox" id="mo2-cat"> Tag brand-new entries as category "imported"</label>
+    </div>
+    <div id="import-seps" class="sep-pick" hidden></div>
+    <div class="import-modes">
+      <div class="imode"><b>Merge / update</b> — keep your current graph; flip enabled state to match the profile and add anything new. Planned mods not in the profile stay put.</div>
+      <div class="imode"><b>Replace</b> — rebuild the graph to mirror this profile exactly, with known dependencies re-wired. Planned mods not in the profile are dropped.</div>
+    </div>
+    <div id="import-confirm" class="import-confirm" hidden>
+      <span>Replace the <b>entire</b> graph with this profile? Planning entries not in the profile will be removed.</span>
+      <div class="cbtns"><button class="btn" id="import-back">Back</button><button class="btn danger" id="import-replace-go">Confirm replace</button></div>
+    </div>
+    <div class="modal-actions" id="import-buttons">
+      <button class="btn" id="import-cancel">Cancel</button>
+      <button class="btn" id="import-replace">Replace…</button>
+      <button class="btn primary" id="import-merge">Merge / update</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-json">
+  <div class="modal">
+    <h3 id="json-title">Export catalog</h3>
+    <p id="json-desc">Copy this JSON as a backup, or drop it into version control alongside your modlist.</p>
+    <textarea id="json-text"></textarea>
+    <div class="modal-actions">
+      <button class="btn" id="json-cancel">Close</button>
+      <button class="btn primary" id="json-action">Save file</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-reconcile">
+  <div class="modal">
+    <h3>Reconcile with MO2 profile</h3>
+    <p>Load or paste your <code>modlist.txt</code>. This finds mods in the planner that are <b>not</b> in the profile — planning entries you dropped, or leftovers to clean out. Mods flagged <b>External</b> (ENB, ReShade, manual installs) are excluded, since they're expected to live outside MO2.</p>
+    <div class="mrow">
+      <input type="file" id="rec-file" accept=".txt">
+      <span class="hint">modlist.txt — or paste below</span>
+    </div>
+    <textarea id="rec-text" placeholder="+SkyUI&#10;+SSE Engine Fixes&#10;+BFCO - Attack Behavior Framework"></textarea>
+    <div id="rec-seps" class="sep-pick" hidden></div>
+    <div class="modal-actions" id="rec-scan-row">
+      <button class="btn" id="rec-cancel">Cancel</button>
+      <button class="btn primary" id="rec-scan">Scan</button>
+    </div>
+    <div id="rec-results" hidden>
+      <div class="rec-summary" id="rec-summary"></div>
+      <div class="rec-selctl">
+        <button class="btn" id="rec-all">Select all</button>
+        <button class="btn" id="rec-none">Select none</button>
+      </div>
+      <div id="rec-list" class="rec-list"></div>
+      <div class="modal-actions">
+        <button class="btn" id="rec-back">Back</button>
+        <button class="btn" id="rec-close">Close</button>
+        <button class="btn danger" id="rec-delete">Delete selected (0)</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<script src="js/10-categories.js"></script>
+<script src="js/20-catalog.js"></script>
+<script src="js/30-state.js"></script>
+<script src="js/40-validate.js"></script>
+<script src="js/50-render.js"></script>
+<script src="js/60-inspector.js"></script>
+<script src="js/70-graph.js"></script>
+<script src="js/80-ui.js"></script>
+<script src="js/85-import.js"></script>
+<script src="js/90-io-persist.js"></script>
+<script src="js/99-boot.js"></script>
+</body>
+</html>
