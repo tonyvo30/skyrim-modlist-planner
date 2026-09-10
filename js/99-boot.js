@@ -2,6 +2,7 @@
 loadCatFilter();
 loadAdultMode();
 loadSizeByDeps();
+loadHideL1MT();
 loadMsgSev();
 loadLegendMin();
 render(true);
@@ -11,5 +12,6 @@ initGraph();
   b.textContent="Adult: "+(adultMode==="all"?"all":adultMode==="only"?"only":"hidden");
   b.classList.toggle("a-only",adultMode==="only");b.classList.toggle("a-hide",adultMode==="hide");})();
 updateSizeBtn();
+updateHideL1Btn();
 applyLegendMin();
 initPersistence();

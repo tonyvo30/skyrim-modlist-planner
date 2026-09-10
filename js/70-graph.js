@@ -2,17 +2,24 @@
 // A mod is filtered OUT of the graph (not just dimmed) when its category is hidden
 // or the adult filter excludes it. Excluding — rather than display:none-hiding — lets
 // the layout truly repack the remaining tiers instead of reserving empty slots.
-function isFilteredOut(m){
+// the "Models and Textures" family (the real Nexus category, plus plausible custom variants)
+function isModelTexCat(c){const k=catNorm(c);return k==="models and textures"||k==="models"||k==="textures";}
+// lvlMap (when supplied) enables the hierarchy-view "hide level-1 Models & Textures" declutter:
+// a foundational (level-1) M&T mod is dropped from the graph entirely so the tier repacks.
+function isFilteredOut(m, lvlMap){
   if(hiddenCats.has(catNorm(m.cat))) return true;
   const a=!!m.adult;
   if(adultMode==="only"&&!a) return true;
   if(adultMode==="hide"&&a) return true;
+  if(lvlMap && isModelTexCat(m.cat) && lvlMap[m.id]===(showRoot?1:0)) return true;
   return false;
 }
 function buildElements(){
   const els=[];
   const confSeen=new Set();   // dedupe symmetric conflict pairs to a single edge
-  const inc=new Set(state.mods.filter(m=>!isFilteredOut(m)).map(m=>m.id));  // ids present in the graph
+  // level map only needed (and only meaningful) for the hierarchy-view L1 M&T hide
+  const lvlMap=(hideL1MT&&curLayout==="tree")?computeLevels():null;
+  const inc=new Set(state.mods.filter(m=>!isFilteredOut(m,lvlMap)).map(m=>m.id));  // ids present in the graph
   const shown=id=>inc.has(id);
   state.mods.forEach(m=>{
     if(!inc.has(m.id))return;
@@ -150,6 +157,8 @@ function dependentsCount(){
 }
 function updateSizeBtn(){const b=document.getElementById("toggle-sizedeps");if(!b)return;
   b.textContent="Size by deps: "+(sizeByDeps?"on":"off");b.classList.toggle("primary",sizeByDeps);}
+function updateHideL1Btn(){const b=document.getElementById("toggle-l1mt");if(!b)return;
+  b.textContent="Hide L1 textures: "+(hideL1MT?"on":"off");b.classList.toggle("primary",hideL1MT);}
 // Active only in force view with the toggle on; otherwise inline sizes are stripped so the
 // stylesheet's fixed node sizes return. sqrt scaling keeps the big foundational nodes from
 // dwarfing everything; the Skyrim root (everything hangs off it) is pinned to the max.

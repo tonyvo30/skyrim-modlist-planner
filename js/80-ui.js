@@ -9,8 +9,11 @@ document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>setTab(b.dataset.tab)
 /* ---------- toolbar actions ---------- */
 document.getElementById("btn-add").onclick=()=>openInspector("__new__");
 document.getElementById("fit").onclick=()=>{if(cyReady)fitVisible();};
-document.getElementById("lay-tree").onclick=()=>{curLayout="tree";relayout();};
-document.getElementById("lay-force").onclick=()=>{curLayout="force";relayout();};
+function errNow(){return new Set(validate().filter(w=>w.sev!=="info").map(w=>w.mod));}
+// When the L1-M&T hide is on, the included node set differs between hierarchy and force,
+// so switching views must rebuild (not just relayout) to add/remove those nodes.
+document.getElementById("lay-tree").onclick=()=>{curLayout="tree";if(hideL1MT&&cyReady)rebuildGraph(errNow());else relayout();};
+document.getElementById("lay-force").onclick=()=>{curLayout="force";if(hideL1MT&&cyReady)rebuildGraph(errNow());else relayout();};
 document.getElementById("toggle-root").onclick=()=>{showRoot=!showRoot;document.getElementById("toggle-root").textContent="Skyrim root: "+(showRoot?"on":"off");if(cyReady)rebuildGraph(new Set(validate().filter(w=>w.sev!=="info").map(w=>w.mod)));};
 document.getElementById("btn-adult").onclick=()=>{setAdultMode(adultMode==="all"?"only":adultMode==="only"?"hide":"all");};
 let legendMin=false;
@@ -20,3 +23,4 @@ function applyLegendMin(){const body=document.getElementById("legend-body"),btn=
   if(!body||!btn)return; body.hidden=legendMin; btn.textContent=legendMin?"Legend +":"Legend -"; btn.title=legendMin?"Show legend":"Minimize legend"; if(leg)leg.classList.toggle("min",legendMin);}
 document.getElementById("legend-toggle").onclick=()=>{legendMin=!legendMin;saveLegendMin();applyLegendMin();};
 document.getElementById("toggle-sizedeps").onclick=()=>{sizeByDeps=!sizeByDeps;saveSizeByDeps();updateSizeBtn();if(cyReady){if(curLayout==="force")relayout();else applyNodeSizing();}};
+document.getElementById("toggle-l1mt").onclick=()=>{hideL1MT=!hideL1MT;saveHideL1MT();updateHideL1Btn();if(cyReady)rebuildGraph(errNow());};
