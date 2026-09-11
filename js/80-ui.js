@@ -11,10 +11,9 @@ document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>setTab(b.dataset.tab)
 document.getElementById("btn-add").onclick=()=>openInspector("__new__");
 document.getElementById("fit").onclick=()=>{if(cyReady)fitVisible();};
 function errNow(){return new Set(validate().filter(w=>w.sev!=="info").map(w=>w.mod));}
-// The L1-M&T hide now applies in both views, so switching hierarchy<->force keeps the same
-// node set — a plain relayout (no rebuild) is enough.
-document.getElementById("lay-tree").onclick=()=>{curLayout="tree";relayout();};
-document.getElementById("lay-force").onclick=()=>{curLayout="force";relayout();};
+// Switching view may change the node set (force view can add cluster compound nodes), so rebuild.
+document.getElementById("lay-tree").onclick=()=>{curLayout="tree";if(cyReady)rebuildGraph(errNow());else relayout();};
+document.getElementById("lay-force").onclick=()=>{curLayout="force";if(cyReady)rebuildGraph(errNow());else relayout();};
 document.getElementById("toggle-root").onclick=()=>{showRoot=!showRoot;document.getElementById("toggle-root").textContent="Skyrim root: "+(showRoot?"on":"off");if(cyReady)rebuildGraph(new Set(validate().filter(w=>w.sev!=="info").map(w=>w.mod)));};
 document.getElementById("btn-adult").onclick=()=>{setAdultMode(adultMode==="all"?"only":adultMode==="only"?"hide":"all");};
 let legendMin=false;
@@ -25,3 +24,27 @@ function applyLegendMin(){const body=document.getElementById("legend-body"),btn=
 document.getElementById("legend-toggle").onclick=()=>{legendMin=!legendMin;saveLegendMin();applyLegendMin();};
 document.getElementById("toggle-sizedeps").onclick=()=>{sizeByDeps=!sizeByDeps;saveSizeByDeps();updateSizeBtn();if(cyReady){if(curLayout==="force")relayout();else applyNodeSizing();}};
 document.getElementById("toggle-l1mt").onclick=()=>{hideL1MT=!hideL1MT;saveHideL1MT();updateHideL1Btn();if(cyReady)rebuildGraph(errNow());};
+// ---- organic clustering (force view) ----
+function updateClusterUI(){
+  const b=document.getElementById("toggle-cluster"), w=document.getElementById("cluster-res-wrap"),
+        v=document.getElementById("cluster-res-val"), s=document.getElementById("cluster-res");
+  if(!b)return;
+  b.textContent="Group clusters: "+(groupByCluster?"on":"off");
+  b.classList.toggle("primary",groupByCluster);
+  if(w)w.hidden=!groupByCluster;
+  if(s)s.value=String(clusterResolution);
+  if(v)v.textContent=groupByCluster?(clusterResolution.toFixed(1)+" · "+(lastClusterCount||0)+" clusters"):"";
+}
+document.getElementById("toggle-cluster").onclick=()=>{
+  groupByCluster=!groupByCluster; saveGroupByCluster();
+  if(groupByCluster) curLayout="force";   // clusters only render in the force view
+  if(cyReady)rebuildGraph(errNow());
+  updateClusterUI();
+};
+(function(){
+  const s=document.getElementById("cluster-res"), v=document.getElementById("cluster-res-val");
+  if(!s)return;
+  s.oninput=()=>{clusterResolution=parseFloat(s.value)||1; if(v)v.textContent=clusterResolution.toFixed(1)+" · …";};
+  s.onchange=()=>{clusterResolution=parseFloat(s.value)||1; saveClusterRes();
+    if(cyReady&&groupByCluster){rebuildGraph(errNow());} updateClusterUI();};
+})();

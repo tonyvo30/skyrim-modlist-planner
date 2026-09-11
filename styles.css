@@ -244,3 +244,9 @@ img{max-width:100%}
     #graphpane{border-right:none;border-bottom:1px solid var(--line-soft)}
     aside{min-height:0}
   }
+
+/* cluster resolution slider (force view · group-by-cluster) */
+.res-wrap{display:inline-flex;align-items:center;gap:7px;padding:0 8px;height:28px;
+  background:var(--panel,#151b22);border:1px solid var(--line-soft,#2a333d);border-radius:6px}
+.res-wrap input[type=range]{width:110px;accent-color:#74d4e3;cursor:pointer}
+.res-wrap .hint{font-size:11px;white-space:nowrap;color:var(--muted,#8f9aa6)}

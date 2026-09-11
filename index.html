@@ -42,6 +42,11 @@
       <button class="btn" id="btn-adult" title="Cycle: show all → only adult → hide adult">Adult: all</button>
       <button class="btn" id="toggle-sizedeps" title="Force view only — scale each node by how many mods depend on it">Size by deps: off</button>
       <button class="btn" id="toggle-l1mt" title="Hide level-1 (foundational, dependency-less) Models &amp; Textures mods to declutter the graph (hierarchy and force views)">Hide L1 textures: off</button>
+      <button class="btn" id="toggle-cluster" title="Force view only — group mods into organic clusters detected from the dependency graph (community detection), not by category">Group clusters: off</button>
+      <span id="cluster-res-wrap" class="res-wrap" hidden title="Cluster resolution: lower = fewer, larger clusters; higher = more, finer clusters">
+        <input type="range" id="cluster-res" min="0.4" max="2.6" step="0.1" value="1">
+        <span id="cluster-res-val" class="hint"></span>
+      </span>
     </div>
     <div id="cy"></div>
     <div class="graph-fallback" id="gfb">Graph library didn't load (offline / blocked). The mod list, dependency editing, and validation on the right still work fully.</div>
@@ -150,6 +155,10 @@
   </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<!-- fcose force layout (auto-registers with cytoscape): layout-base <- cose-base <- cytoscape-fcose -->
+<script src="https://cdn.jsdelivr.net/npm/layout-base@2.0.1/layout-base.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cose-base@2.2.0/cose-base.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-fcose@2.2.0/cytoscape-fcose.js"></script>
 <script src="js/10-categories.js"></script>
 <script src="js/20-catalog.js"></script>
 <script src="js/30-state.js"></script>

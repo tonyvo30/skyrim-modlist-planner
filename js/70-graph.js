@@ -14,6 +14,81 @@ function isFilteredOut(m, lvlMap){
   if(lvlMap && isModelTexCat(m.cat) && lvlMap[m.id]===(showRoot?1:0)) return true;
   return false;
 }
+// ---- organic clustering (force view "Group clusters") --------------------------------------
+// Louvain modularity clustering (single-level local moving) over the REQUIRES / PATCHES / ANY-OF
+// graph among the visible ids. Category and names are never read — clusters emerge purely from
+// connectivity. `resolution` tunes granularity (higher => more, smaller clusters). Degree-0 nodes
+// (no dependency edges) share one "no dependencies" cluster. Returns {comm, hub, color}.
+let lastClusterCount = 0;   // #clusters from the most recent grouped build (for the slider readout)
+function hslHex(h,s,l){ // h,s,l in [0,1] -> "#rrggbb"
+  const f=n=>{const k=(n+h*12)%12,a=s*Math.min(l,1-l),v=l-a*Math.max(-1,Math.min(k-3,9-k,1));return Math.round(v*255);};
+  const x=v=>v.toString(16).padStart(2,"0"); return "#"+x(f(0))+x(f(8))+x(f(4));
+}
+// Weighted multi-level Louvain. `edges` are [u,v,w] over node indices 0..N-1 (self-loops allowed).
+// Returns an array: original node index -> final community label. Includes the aggregation phase,
+// so `resolution` meaningfully controls granularity (higher => more, smaller communities).
+function louvain(N, edges, resolution){
+  const buildGraph=(n,elist)=>{
+    const nbr=Array.from({length:n},()=>new Map()), self=new Array(n).fill(0), k=new Array(n).fill(0);
+    let m=0;
+    elist.forEach(([u,v,w])=>{
+      if(u===v){ self[u]+=w; k[u]+=2*w; m+=w; }
+      else{ nbr[u].set(v,(nbr[u].get(v)||0)+w); nbr[v].set(u,(nbr[v].get(u)||0)+w); k[u]+=w; k[v]+=w; m+=w; }
+    });
+    return {n,nbr,self,k,m:m||1};
+  };
+  let cur=buildGraph(N,edges);
+  let origToCur=Array.from({length:N},(_,i)=>i);
+  while(true){
+    const {n,nbr,self,k,m}=cur;
+    const comm=Array.from({length:n},(_,i)=>i), sTot=k.slice();
+    let improved=true, anyMove=false, guard=0;
+    while(improved&&guard++<100){ improved=false;
+      for(let i=0;i<n;i++){
+        const ci=comm[i]; sTot[ci]-=k[i];
+        const wTo=new Map(); nbr[i].forEach((w,j)=>{const cj=comm[j];wTo.set(cj,(wTo.get(cj)||0)+w);});
+        let best=ci, bestGain=(wTo.get(ci)||0)-resolution*sTot[ci]*k[i]/(2*m);
+        wTo.forEach((w,c)=>{ const g=w-resolution*sTot[c]*k[i]/(2*m); if(g>bestGain+1e-12){bestGain=g;best=c;} });
+        comm[i]=best; sTot[best]+=k[i]; if(best!==ci){improved=true;anyMove=true;}
+      }
+    }
+    const lab=new Map(); let c=0;
+    const newComm=comm.map(x=>{ if(!lab.has(x))lab.set(x,c++); return lab.get(x); });
+    origToCur=origToCur.map(cn=>newComm[cn]);
+    if(!anyMove||c===n) break;                 // converged: nothing merged this round
+    const em=new Map();                         // aggregate into c super-nodes
+    for(let i=0;i<n;i++){
+      const ca=newComm[i];
+      if(self[i]){const key=ca+","+ca; em.set(key,(em.get(key)||0)+self[i]);}
+      nbr[i].forEach((w,j)=>{ if(j>i){ const cb=newComm[j], a=Math.min(ca,cb), b=Math.max(ca,cb); const key=a+","+b; em.set(key,(em.get(key)||0)+w);} });
+    }
+    const elist2=[]; em.forEach((w,key)=>{const p=key.split(",");elist2.push([+p[0],+p[1],w]);});
+    cur=buildGraph(c,elist2);
+  }
+  return origToCur;
+}
+function detectCommunities(incSet, resolution){
+  const ids=[...incSet], idx={}; ids.forEach((id,i)=>idx[id]=i);
+  const deg=new Array(ids.length).fill(0), edges=[];
+  ids.forEach(id=>{ const m=byId(id); if(!m)return; const a=idx[id];
+    const link=ref=>{ if(incSet.has(ref)&&ref!==id){ edges.push([a,idx[ref],1]); deg[a]++; deg[idx[ref]]++; } };
+    (m.requires||[]).forEach(r=>{if(r.k==="mod")link(r.ref);});
+    (m.patchFor||[]).forEach(r=>{if(r.k==="mod")link(r.ref);});
+    (m.anyOf||[]).forEach(g=>(g.mods||[]).forEach(x=>link(x)));
+  });
+  const lab=louvain(ids.length, edges, resolution);
+  const comm={}; ids.forEach((id,i)=>{ comm[id]= deg[i]===0 ? "__nodeps__" : "c"+lab[i]; });
+  const members={}; ids.forEach(id=>{(members[comm[id]]=members[comm[id]]||[]).push(id);});
+  const order=Object.keys(members).sort((a,b)=>members[b].length-members[a].length);
+  const hub={}, color={};
+  order.forEach((c,i)=>{
+    if(c==="__nodeps__"){ hub[c]="No dependencies"; color[c]="#6c7d8c"; return; }
+    let best=members[c][0],bd=-1; members[c].forEach(id=>{const d=deg[idx[id]];if(d>bd){bd=d;best=id;}});
+    hub[c]=byId(best)?byId(best).name:best;
+    color[c]=hslHex((i*0.61803398875)%1, 0.55, 0.63);
+  });
+  return {comm, hub, color};
+}
 function buildElements(){
   const els=[];
   const confSeen=new Set();   // dedupe symmetric conflict pairs to a single edge
@@ -22,9 +97,22 @@ function buildElements(){
   const lvlMap=hideL1MT?computeLevels():null;
   const inc=new Set(state.mods.filter(m=>!isFilteredOut(m,lvlMap)).map(m=>m.id));  // ids present in the graph
   const shown=id=>inc.has(id);
+  // Force view "Group clusters": wrap each mod in a compound box for its detected community, so
+  // fcose keeps a cluster together and the boxes get pushed apart. Node colour follows the cluster
+  // (not the category) here. Omitted in the tree view and when the toggle is off.
+  const grouped = curLayout==="force" && groupByCluster;
+  let CM=null;
+  if(grouped){
+    CM=detectCommunities(inc, clusterResolution);
+    const cset=new Set(); inc.forEach(id=>cset.add(CM.comm[id]));
+    lastClusterCount=cset.size;
+    cset.forEach(c=>els.push({data:{id:"grp::"+c,label:CM.hub[c]||"Cluster",color:CM.color[c]||"#6c7d8c"},classes:"catgroup"}));
+  }
   state.mods.forEach(m=>{
     if(!inc.has(m.id))return;
-    els.push({data:{id:m.id,label:m.name,cat:m.cat,adult:!!m.adult},classes:m.enabled?"":"off"});
+    const d={id:m.id,label:m.name,cat:m.cat,adult:!!m.adult};
+    if(grouped){ const c=CM.comm[m.id]; d.parent="grp::"+c; d.gcolor=CM.color[c]; }
+    els.push({data:d,classes:m.enabled?"":"off"});
   });
   state.mods.forEach(m=>{
     if(!inc.has(m.id))return;
@@ -51,11 +139,15 @@ function buildElements(){
 }
 function cyStyle(){
   return [
-    {selector:"node",style:{"background-color":ele=>catColor(ele.data("cat")),"label":"data(label)",
+    {selector:"node",style:{"background-color":ele=>ele.data("gcolor")||catColor(ele.data("cat")),"label":"data(label)",
       "color":"#dfe8ef","font-size":"10px","font-family":"IBM Plex Sans, sans-serif","text-wrap":"wrap",
       "text-max-width":"96px","text-valign":"bottom","text-margin-y":4,"width":18,"height":18,
       "border-width":2,"border-color":"#0b0f14","text-outline-width":2,"text-outline-color":"#0b0f14"}},
     {selector:"node.off",style:{"opacity":.32,"font-size":"9px"}},
+    {selector:"node.catgroup",style:{"shape":"round-rectangle","background-color":"data(color)","background-opacity":0.05,
+      "border-width":1.5,"border-color":"data(color)","border-opacity":0.5,"label":"data(label)","text-valign":"top",
+      "text-halign":"center","font-family":"Cinzel, serif","font-size":"14px","font-weight":700,"color":"data(color)",
+      "text-margin-y":-6,"padding":"20px","text-outline-width":2,"text-outline-color":"#0b0f14"}},
     {selector:"node.base",style:{"background-color":"#f4f9fb","shape":"round-diamond","width":30,"height":30,
       "font-family":"Cinzel, serif","font-size":"13px","font-weight":700,"color":"#f4f9fb","border-width":2,"border-color":"#74d4e3","text-margin-y":5}},
     {selector:"node.adultnode",style:{"border-width":3,"border-color":"#a98fd4"}},
@@ -77,7 +169,15 @@ function cyStyle(){
   ];
 }
 function layoutCfg(kind){
-  if(kind==="force") return {name:"cose",animate:false,padding:30,nodeRepulsion:9000,idealEdgeLength:70,nodeDimensionsIncludeLabels:true};
+  if(kind==="force"){
+    const base={name:"fcose",animate:false,quality:"default",randomize:true,packComponents:true,
+      numIter:2500,padding:20,nodeDimensionsIncludeLabels:true};
+    // grouped: tight (high gravity, low repulsion, strong compound gravity) so clusters pack small;
+    // plain fcose: moderate spread.
+    if(groupByCluster) return Object.assign(base,{nodeSeparation:35,idealEdgeLength:45,nodeRepulsion:4000,
+      gravity:0.7,gravityRange:2.2,gravityCompound:3.0,gravityRangeCompound:1.6,nestingFactor:0.9});
+    return Object.assign(base,{nodeSeparation:80,idealEdgeLength:70,nodeRepulsion:9000,gravity:0.35,gravityRange:3.2});
+  }
   const roots=showRoot?[ROOT_ID]:state.mods.filter(m=>depsOfMod(m).length===0).map(m=>m.id);
   // maximal:true = longest-path (DAG) layering — a mod is placed BELOW everything it requires,
   // instead of breadthfirst's default shortest-hop depth (which let a mod with a short alternate
@@ -86,6 +186,30 @@ function layoutCfg(kind){
 }
 // fit the viewport to only the visible (non-filtered) nodes
 function fitVisible(){if(!cyReady||!cy)return;const vis=cy.elements(":visible");if(vis.length)cy.fit(vis,30);}
+// After the grouped force layout, push the cluster compound boxes apart so they don't overlap.
+// fcose keeps each cluster's members together but doesn't guarantee the boxes separate; this is an
+// iterative minimum-translation rectangle separation, moving each box's children along with it.
+function separateGroupBoxes(){
+  if(!cy)return;
+  const parents=cy.nodes().filter(n=>n.isParent());
+  if(parents.length<2)return;
+  const PAD=20;
+  const info=()=>parents.map(p=>{const bb=p.boundingBox({includeLabels:false});
+    return {p, x:(bb.x1+bb.x2)/2, y:(bb.y1+bb.y2)/2, hw:bb.w/2+PAD, hh:bb.h/2+PAD};});
+  for(let iter=0;iter<1200;iter++){
+    const B=info(), disp={}; parents.forEach(p=>disp[p.id()]={x:0,y:0}); let moved=false;
+    for(let i=0;i<B.length;i++)for(let j=i+1;j<B.length;j++){
+      const a=B[i],b=B[j]; let dx=b.x-a.x,dy=b.y-a.y; if(!dx&&!dy){dx=Math.random()-0.5;dy=Math.random()-0.5;}
+      const ox=(a.hw+b.hw)-Math.abs(dx), oy=(a.hh+b.hh)-Math.abs(dy);
+      if(ox>0&&oy>0){ moved=true;
+        if(ox<oy){const s=(dx<0?-1:1)*ox/2; disp[a.p.id()].x-=s; disp[b.p.id()].x+=s;}
+        else{const s=(dy<0?-1:1)*oy/2; disp[a.p.id()].y-=s; disp[b.p.id()].y+=s;}
+      }
+    }
+    if(!moved)break;
+    parents.forEach(p=>{const d=disp[p.id()]; if(d.x||d.y) p.children().positions(ele=>({x:ele.position('x')+d.x,y:ele.position('y')+d.y}));});
+  }
+}
 // The hierarchy is defined by REQUIRES only. Patch / conflict / load-after links still render,
 // but they must NOT drive the tree levels — a "patches" link isn't "depends on", and feeding it
 // into the layout distorts depths (foundational, heavily-patched mods like USSEP sink below their
@@ -180,7 +304,12 @@ function relayout(){
   if(!vis.length)return;
   applyNodeSizing();   // force: size by dependents (before layout); tree: strips inline sizes
   if(curLayout==="force"){
-    const l=vis.layout(layoutCfg("force")); l.one("layoutstop",fitVisible); l.run(); return;
+    // fcose is loaded from a CDN; if it failed to register, fall back to the built-in cose
+    let cfg=layoutCfg("force"),l;
+    try{ l=vis.layout(cfg); }
+    catch(e){ l=vis.layout(Object.assign({},cfg,{name:"cose"})); }
+    l.one("layoutstop",()=>{ if(cy.nodes().some(n=>n.isParent())) separateGroupBoxes(); fitVisible(); });
+    l.run(); return;
   }
   const pos=tieredPositions(vis);
   const l=vis.layout({name:"preset",positions:n=>pos[n.id()]||{x:0,y:0},fit:false,padding:30,animate:false});
@@ -189,9 +318,9 @@ function relayout(){
 function initGraph(){
   if(typeof cytoscape==="undefined"){document.getElementById("gfb").style.display="flex";return;}
   cy=cytoscape({container:document.getElementById("cy"),elements:buildElements(),style:cyStyle(),
-    layout:{name:"preset"},minZoom:.2,maxZoom:2.5,wheelSensitivity:.25});
+    layout:{name:"preset"},minZoom:.05,maxZoom:2.5,wheelSensitivity:.25});
   cyReady=true;
-  cy.on("tap","node",ev=>{const id=ev.target.id();if(id===ROOT_ID)return;openInspector(id);});
+  cy.on("tap","node",ev=>{const id=ev.target.id();if(id===ROOT_ID||id.indexOf("grp::")===0)return;openInspector(id);});
   cy.on("mouseover","node",ev=>highlightNeighbors(ev.target));
   cy.on("mouseout","node",()=>{cy.elements().removeClass("dim hi");});
   cy.on("tap",ev=>{if(ev.target===cy)cy.elements().removeClass("dim hi");});

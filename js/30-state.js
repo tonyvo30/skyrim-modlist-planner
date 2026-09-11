@@ -18,6 +18,12 @@ function loadSizeByDeps(){try{sizeByDeps=localStorage.getItem("skyrim-planner-si
 let hideL1MT = false;         // hierarchy + force views: hide level-1 Models & Textures mods to declutter
 function saveHideL1MT(){try{localStorage.setItem("skyrim-planner-hidel1mt",hideL1MT?"1":"0");}catch(e){}}
 function loadHideL1MT(){try{hideL1MT=localStorage.getItem("skyrim-planner-hidel1mt")==="1";}catch(e){}}
+let groupByCluster = false;   // force view: box mods into organic communities detected from the dep graph
+function saveGroupByCluster(){try{localStorage.setItem("skyrim-planner-groupcluster",groupByCluster?"1":"0");}catch(e){}}
+function loadGroupByCluster(){try{groupByCluster=localStorage.getItem("skyrim-planner-groupcluster")==="1";}catch(e){}}
+let clusterResolution = 1;    // Louvain resolution: higher = more, smaller clusters
+function saveClusterRes(){try{localStorage.setItem("skyrim-planner-clusterres",String(clusterResolution));}catch(e){}}
+function loadClusterRes(){try{const r=parseFloat(localStorage.getItem("skyrim-planner-clusterres"));if(isFinite(r)&&r>0)clusterResolution=r;}catch(e){}}
 let msgSevHidden=new Set();   // message severities hidden in the Messages tab
 function saveMsgSev(){try{localStorage.setItem("skyrim-planner-msgsev",JSON.stringify([...msgSevHidden]));}catch(e){}}
 function loadMsgSev(){try{const r=localStorage.getItem("skyrim-planner-msgsev");if(r)JSON.parse(r).forEach(s=>msgSevHidden.add(s));}catch(e){}}
