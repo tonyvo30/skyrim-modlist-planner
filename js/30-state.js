@@ -15,7 +15,7 @@ function saveAdultMode(){try{localStorage.setItem("skyrim-planner-adultmode",adu
 function loadAdultMode(){try{const r=localStorage.getItem("skyrim-planner-adultmode");if(r==="all"||r==="only"||r==="hide")adultMode=r;}catch(e){}}
 function saveSizeByDeps(){try{localStorage.setItem("skyrim-planner-sizedeps",sizeByDeps?"1":"0");}catch(e){}}
 function loadSizeByDeps(){try{sizeByDeps=localStorage.getItem("skyrim-planner-sizedeps")==="1";}catch(e){}}
-let hideL1MT = false;         // hierarchy view only: hide level-1 Models & Textures mods to declutter
+let hideL1MT = false;         // hierarchy + force views: hide level-1 Models & Textures mods to declutter
 function saveHideL1MT(){try{localStorage.setItem("skyrim-planner-hidel1mt",hideL1MT?"1":"0");}catch(e){}}
 function loadHideL1MT(){try{hideL1MT=localStorage.getItem("skyrim-planner-hidel1mt")==="1";}catch(e){}}
 let msgSevHidden=new Set();   // message severities hidden in the Messages tab

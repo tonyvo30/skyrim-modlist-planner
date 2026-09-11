@@ -4,8 +4,8 @@
 // the layout truly repack the remaining tiers instead of reserving empty slots.
 // the "Models and Textures" family (the real Nexus category, plus plausible custom variants)
 function isModelTexCat(c){const k=catNorm(c);return k==="models and textures"||k==="models"||k==="textures";}
-// lvlMap (when supplied) enables the hierarchy-view "hide level-1 Models & Textures" declutter:
-// a foundational (level-1) M&T mod is dropped from the graph entirely so the tier repacks.
+// lvlMap (when supplied) enables the "hide level-1 Models & Textures" declutter, in both views:
+// a foundational (level-1) M&T mod is dropped from the graph entirely so the layout repacks.
 function isFilteredOut(m, lvlMap){
   if(hiddenCats.has(catNorm(m.cat))) return true;
   const a=!!m.adult;
@@ -17,8 +17,9 @@ function isFilteredOut(m, lvlMap){
 function buildElements(){
   const els=[];
   const confSeen=new Set();   // dedupe symmetric conflict pairs to a single edge
-  // level map only needed (and only meaningful) for the hierarchy-view L1 M&T hide
-  const lvlMap=(hideL1MT&&curLayout==="tree")?computeLevels():null;
+  // level map only needed when the L1 M&T hide is on. computeLevels() is a pure requires-graph
+  // longest-path (layout-independent), so it's equally valid in the hierarchy and force views.
+  const lvlMap=hideL1MT?computeLevels():null;
   const inc=new Set(state.mods.filter(m=>!isFilteredOut(m,lvlMap)).map(m=>m.id));  // ids present in the graph
   const shown=id=>inc.has(id);
   state.mods.forEach(m=>{

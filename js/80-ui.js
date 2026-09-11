@@ -10,10 +10,10 @@ document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>setTab(b.dataset.tab)
 document.getElementById("btn-add").onclick=()=>openInspector("__new__");
 document.getElementById("fit").onclick=()=>{if(cyReady)fitVisible();};
 function errNow(){return new Set(validate().filter(w=>w.sev!=="info").map(w=>w.mod));}
-// When the L1-M&T hide is on, the included node set differs between hierarchy and force,
-// so switching views must rebuild (not just relayout) to add/remove those nodes.
-document.getElementById("lay-tree").onclick=()=>{curLayout="tree";if(hideL1MT&&cyReady)rebuildGraph(errNow());else relayout();};
-document.getElementById("lay-force").onclick=()=>{curLayout="force";if(hideL1MT&&cyReady)rebuildGraph(errNow());else relayout();};
+// The L1-M&T hide now applies in both views, so switching hierarchy<->force keeps the same
+// node set — a plain relayout (no rebuild) is enough.
+document.getElementById("lay-tree").onclick=()=>{curLayout="tree";relayout();};
+document.getElementById("lay-force").onclick=()=>{curLayout="force";relayout();};
 document.getElementById("toggle-root").onclick=()=>{showRoot=!showRoot;document.getElementById("toggle-root").textContent="Skyrim root: "+(showRoot?"on":"off");if(cyReady)rebuildGraph(new Set(validate().filter(w=>w.sev!=="info").map(w=>w.mod)));};
 document.getElementById("btn-adult").onclick=()=>{setAdultMode(adultMode==="all"?"only":adultMode==="only"?"hide":"all");};
 let legendMin=false;
