@@ -21,11 +21,36 @@ function resolveTemplate(name){
   for(const t of DEFAULT_CATALOG){if(/^cc/i.test(t.pin||"")&&nlow.includes(t.pin.toLowerCase()))return t;}
   return null;
 }
-// Nexus SkyrimSE category IDs → names (verified from the user's meta.ini + Nexus). Unknown IDs
-// fall back to "Category N" and can be renamed in the inspector.
-const NEXUS_CAT_IDS={"3":"Audio","9":"Gameplay","17":"User Interface","24":"Bug Fixes","33":"Utilities","35":"Modders Resources","47":"Miscellaneous"};
-// name(normalised) -> category, built from a picked mods folder's meta.ini files
+// MO2 category IDs -> names, taken verbatim from the user's MO2 categories.dat (the default
+// SkyrimSE set). meta.ini "category=" stores these IDs directly (nexuscatmap.dat is empty, so
+// MO2 does no Nexus->MO2 remap), and the primary (first) id wins. Names that have a planner
+// KNOWN_CATS equivalent are spelled to match it (so they inherit the curated colour): e.g.
+// "Models and Textures", "Bug Fixes", "User Interface", "Visuals and Graphics". Everything else
+// keeps its categories.dat name and gets a stable generated colour. Unknown IDs (custom
+// categories, or a non-default categories.dat) still fall back to "Category N".
+const NEXUS_CAT_IDS={
+  "1":"Animations","52":"Poses",
+  "2":"Armour","53":"Power Armor",
+  "3":"Audio","38":"Music","39":"Voice",
+  "5":"Clothing","41":"Jewelry","42":"Backpacks",
+  "6":"Collectables","28":"Companions","7":"Creatures Mounts and Vehicles","8":"Factions",
+  "9":"Gameplay","27":"Combat","43":"Crafting","48":"Overhauls","49":"Perks","54":"Radio",
+  "55":"Shouts","22":"Skills and Levelling","58":"Weather and Lighting","44":"Equipment","45":"Home and Settlement",
+  "10":"Body, Face, and Hair","40":"Character Presets",
+  "11":"Items","32":"Mercantile","37":"Ammo","19":"Weapons","36":"Weapon and Armour Sets",
+  "23":"Player Homes","25":"Castles and Mansions","51":"Settlements",
+  "12":"Locations","4":"Cities","31":"Landscape Changes","29":"Environment","30":"Immersion",
+  "20":"Magic","21":"Models and Textures","33":"Modders Resources","13":"NPCs",
+  "24":"Bug Fixes","14":"Patches","35":"Utilities","26":"Cheats",
+  "15":"Quests","16":"Races and Classes","34":"Stealth",
+  "17":"User Interface","18":"Visuals and Graphics","50":"Pip-Boy","46":"Shader Presets","47":"Miscellaneous"
+};
+// name(normalised) -> category, built from a picked mods folder's meta.ini files. Persisted to
+// localStorage so the Mods folder is a ONE-TIME pick: once read, every later import (this session
+// or a future one) auto-applies categories without re-selecting the folder.
 let metaCatByName={};
+function saveMetaCat(){try{localStorage.setItem("skyrim-planner-metacat",JSON.stringify(metaCatByName));}catch(e){}}
+function loadMetaCat(){try{const r=localStorage.getItem("skyrim-planner-metacat");if(r)metaCatByName=JSON.parse(r)||{};}catch(e){}}
 function catFromMeta(name){return metaCatByName[ikey(name)]||null;}
 
 const PREFIX_RE=/^(Creation Club|DLC|Unmanaged|Root|Managed):\s*/i;
@@ -146,7 +171,10 @@ function doImport(mode){
   toast(mode==="replace"?`Graph rebuilt from profile — ${state.mods.length} mods`:`Merged — ${added} new, ${updated} updated`);
 }
 function resetImportModal(){const c=document.getElementById("import-confirm"),b=document.getElementById("import-buttons");if(c)c.hidden=true;if(b)b.hidden=false;}
-document.getElementById("btn-import").onclick=()=>{resetImportModal();metaCatByName={};const st=document.getElementById("mo2-mods-status");if(st)st.textContent="";renderSepPicker("import");mImport.classList.add("show");};
+document.getElementById("btn-import").onclick=()=>{resetImportModal();const st=document.getElementById("mo2-mods-status");
+  const cached=Object.keys(metaCatByName).length;   // keep any persisted categories; don't wipe on open
+  if(st)st.textContent=cached?`${cached} mod categories remembered — re-pick the folder only to refresh`:"";
+  renderSepPicker("import");mImport.classList.add("show");};
 document.getElementById("import-cancel").onclick=()=>mImport.classList.remove("show");
 document.getElementById("import-merge").onclick=()=>doImport("update");
 document.getElementById("import-replace").onclick=()=>{document.getElementById("import-confirm").hidden=false;document.getElementById("import-buttons").hidden=true;};
@@ -222,7 +250,7 @@ document.getElementById("mo2-mods").onchange=async e=>{
   const files=[...e.target.files].filter(f=>/(^|[\\/])meta\.ini$/i.test(f.webkitRelativePath||f.name));
   const st=document.getElementById("mo2-mods-status");
   if(st)st.textContent="Reading…";
-  metaCatByName={};let unknown=new Set();
+  let unknown=new Set(),read=0;   // merge into the persisted map (don't wipe) so partial folder picks accumulate
   for(const f of files){
     let text;try{text=await f.text();}catch(_){continue;}
     const m=text.match(/^\s*category\s*=\s*"?([0-9,\-]+)"?/im);if(!m)continue;
@@ -232,8 +260,9 @@ document.getElementById("mo2-mods").onchange=async e=>{
     if(!NEXUS_CAT_IDS[primary])unknown.add(primary);
     const parts=(f.webkitRelativePath||"").split("/");
     const modName=parts.length>=2?parts[parts.length-2]:null;
-    if(modName)metaCatByName[ikey(modName)]=cat;
+    if(modName){metaCatByName[ikey(modName)]=cat;read++;}
   }
-  const n=Object.keys(metaCatByName).length;
-  if(st)st.textContent=n?`Read ${n} mod categories`+(unknown.size?` · unknown IDs: ${[...unknown].join(", ")}`:""):"No meta.ini categories found";
+  saveMetaCat();
+  const total=Object.keys(metaCatByName).length;
+  if(st)st.textContent=read?`Read ${read} categories · ${total} remembered`+(unknown.size?` · unknown IDs: ${[...unknown].join(", ")}`:""):"No meta.ini categories found";
 };

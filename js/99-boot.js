@@ -3,6 +3,7 @@ loadCatFilter();
 loadAdultMode();
 loadSizeByDeps();
 loadHideL1MT();
+loadMetaCat();
 loadMsgSev();
 loadLegendMin();
 render(true);
