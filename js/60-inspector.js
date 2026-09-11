@@ -1,7 +1,17 @@
 /* ---------- inspector ---------- */
 const REL_TYPES=[["requires","Requires (hard)","req"],["conflicts","Conflicts with","conf"],["loadAfter","Load after","la"],["patchFor","Patches (main mods)","pf"]];
-function openInspector(id){selected=id;editing=id==="__new__"?newMod():clone(byId(id));curTab="inspector";setTab("inspector");render(false);
-  if(cyReady&&cy&&id!=="__new__"){const n=cy.$id(id);if(n.length&&n.style("display")!=="none")cy.animate({center:{eles:n}},{duration:250});}
+function openInspector(id){selected=id;editing=id==="__new__"?newMod():clone(byId(id));curTab="inspector";
+  setTab("inspector",true);   // switch the panel WITHOUT rendering; render(false) below builds the inspector once
+  render(false);
+  // Center only when the node is off-screen. Panning an already-visible node forces a needless
+  // full-graph repaint over the animation's duration — the "lag shortly after clicking".
+  if(cyReady&&cy&&id!=="__new__"){const n=cy.$id(id);
+    if(n.length&&n.style("display")!=="none"){
+      const ext=cy.extent(),p=n.position(),margin=40;
+      const inView=p.x>ext.x1+margin&&p.x<ext.x2-margin&&p.y>ext.y1+margin&&p.y<ext.y2-margin;
+      if(!inView)cy.animate({center:{eles:n}},{duration:180,easing:"ease-out"});
+    }
+  }
 }
 function highlightInspected(){
   if(!cyReady||!cy)return;

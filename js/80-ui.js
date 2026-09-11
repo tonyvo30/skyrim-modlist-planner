@@ -1,8 +1,9 @@
 /* ---------- tabs ---------- */
-function setTab(t){curTab=t;
+function setTab(t,skipRender){curTab=t;
   document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===t));
   document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id==="panel-"+t));
-  if(t==="inspector")renderInspector();
+  // skipRender lets a caller that is about to render() anyway avoid a duplicate inspector build
+  if(t==="inspector"&&!skipRender)renderInspector();
 }
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
 
