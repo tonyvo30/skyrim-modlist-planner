@@ -249,19 +249,30 @@ document.getElementById("rec-delete").onclick=deleteSelectedOrphans;
 document.getElementById("rec-file").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{document.getElementById("rec-text").value=r.result;renderSepPicker("rec");};r.readAsText(f);};
 // read categories from each mod's meta.ini in a picked mods folder
 document.getElementById("mo2-mods").onchange=async e=>{
-  const files=[...e.target.files].filter(f=>/(^|[\\/])meta\.ini$/i.test(f.webkitRelativePath||f.name));
   const st=document.getElementById("mo2-mods-status");
   if(st)st.textContent="Reading…";
+  // webkitdirectory hands us EVERY file under the picked folder (textures, meshes, scripts —
+  // 90k+ for a full modlist). We only need each mod's TOP-LEVEL meta.ini, i.e. exactly
+  // <picked-folder>/<mod>/meta.ini, so walk the FileList once and keep just those (~one per mod)
+  // instead of spreading all 90k into an array.
+  const fileList=e.target.files, metaFiles=[];
+  for(let i=0;i<fileList.length;i++){
+    const parts=(fileList[i].webkitRelativePath||fileList[i].name).split(/[/\\]/);
+    if(parts.length===3 && /^meta\.ini$/i.test(parts[2])) metaFiles.push(fileList[i]);
+  }
+  // Drop the input's reference to all 90k File objects NOW. Left in place, that retained memory
+  // thrashes GC and stutters the whole browser (typing, even the mouse cursor) until a refresh.
+  // The ~n meta.ini File handles in metaFiles stay valid — a File is an independent Blob ref.
+  e.target.value="";
   let unknown=new Set(),read=0;   // merge into the persisted map (don't wipe) so partial folder picks accumulate
-  for(const f of files){
+  for(const f of metaFiles){
     let text;try{text=await f.text();}catch(_){continue;}
     const m=text.match(/^\s*category\s*=\s*"?([0-9,\-]+)"?/im);if(!m)continue;
     const primary=(m[1].split(",")[0]||"").trim();
     if(!primary||primary==="-1")continue;
     const cat=NEXUS_CAT_IDS[primary]||("Category "+primary);
     if(!NEXUS_CAT_IDS[primary])unknown.add(primary);
-    const parts=(f.webkitRelativePath||"").split("/");
-    const modName=parts.length>=2?parts[parts.length-2]:null;
+    const modName=(f.webkitRelativePath||"").split(/[/\\]/).slice(-2)[0];
     if(modName){metaCatByName[ikey(modName)]=cat;read++;}
   }
   saveMetaCat();
