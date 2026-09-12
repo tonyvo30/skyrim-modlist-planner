@@ -19,4 +19,5 @@ updateHideL1Btn();
 updateClusterUI();
 updateReviewBtn();
 applyLegendMin();
+if(typeof mo2Init==="function") mo2Init();   // async: probe serve.py, reveal Sync if available
 initPersistence();

@@ -259,3 +259,8 @@ img{max-width:100%}
 .review-check{color:#e0c88a}
 .catgroup.review-group h4{color:#e0c88a}
 .catgroup.review-group{border-bottom:1px solid rgba(224,169,78,.25);margin-bottom:6px;padding-bottom:4px}
+
+/* MO2 one-click sync (served by serve.py) */
+.mo2sync{display:flex;align-items:center;gap:6px}
+.mo2sync .mo2-profile{font-family:inherit;cursor:pointer;padding:7px 9px;max-width:150px}
+.mo2sync .mo2-profile:hover{border-color:var(--frost-dim)}

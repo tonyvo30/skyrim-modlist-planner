@@ -24,6 +24,11 @@
   <div class="spacer"></div>
   <div class="actions">
     <span class="persist local" id="persist"><span class="dot"></span><span id="persist-t">local</span></span>
+    <span class="mo2sync" id="mo2sync" hidden>
+      <select class="btn mo2-profile" id="mo2-profile" title="MO2 profile to sync from"></select>
+      <button class="btn" id="mo2-seps" title="Choose which MO2 separator groups Sync includes (remembered)">Separators…</button>
+      <button class="btn" id="mo2-sync" title="Read this profile's modlist and mod categories from your MO2 instance (via serve.py) and merge into the planner">Sync from MO2</button>
+    </span>
     <button class="btn" id="btn-import">Import MO2</button>
     <button class="btn" id="btn-reconcile" title="Find planner mods not in your MO2 profile">Reconcile</button>
     <button class="btn" id="btn-export">Export JSON</button>
@@ -126,6 +131,17 @@
   </div>
 </div>
 
+<div class="modal-bg" id="modal-mo2seps">
+  <div class="modal">
+    <h3>Separators to sync</h3>
+    <p>Choose which MO2 separator groups <b>Sync from MO2</b> includes. Unchecked groups are skipped, and your choices are remembered across syncs. <b>Output</b> and <b>WIP</b> groups are skipped by default.</p>
+    <div id="mo2sep-list" class="sep-pick"></div>
+    <div class="modal-actions">
+      <button class="btn primary" id="mo2sep-close">Done</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-reconcile">
   <div class="modal">
     <h3>Reconcile with MO2 profile</h3>
@@ -169,6 +185,7 @@
 <script src="js/70-graph.js"></script>
 <script src="js/80-ui.js"></script>
 <script src="js/85-import.js"></script>
+<script src="js/86-mo2sync.js"></script>
 <script src="js/90-io-persist.js"></script>
 <script src="js/99-boot.js"></script>
 </body>
