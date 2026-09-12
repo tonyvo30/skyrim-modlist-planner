@@ -9,6 +9,7 @@ function render(structural){
   if(curTab==="inspector") renderInspector();
   if(structural) rebuildGraph(errSet); else refreshGraph(errSet);
   highlightInspected();
+  if(typeof updateReviewBtn==="function") updateReviewBtn();
 }
 function renderCatLegend(){
   const el=document.getElementById("cat-legend");if(!el)return;
@@ -78,30 +79,49 @@ function renderList(errSet){
     :(adultCount?`<span class="list-adult-note">${adultCount} flagged 18+</span>`:"");
   el.innerHTML=`<div class="listctl"><input class="search" id="search" placeholder="Filter mods…" value="${esc(searchTxt)}">${adultNote}</div>`;
   const q=searchTxt.trim().toLowerCase();
+  const pass=m=>{
+    if(q && !(m.name.toLowerCase().includes(q)||m.id.includes(q)||catNorm(m.cat).includes(q))) return false;
+    if(adultMode==="only" && !m.adult) return false;
+    if(adultMode==="hide" && m.adult) return false;
+    if(showOnlyReview && !m.needsReview) return false;
+    return true;
+  };
+  const makeRow=m=>{
+    const row=document.createElement("div");
+    row.className="mod"+(m.enabled?"":" disabled")+(selected===m.id?" sel":"")+(errSet.has(m.id)?" haswarn":"")+(m.needsReview?" needsreview":"");
+    row.innerHTML=`<button class="toggle ${m.enabled?"on":""}" title="Enable/disable"></button>
+      <div class="minfo"><div class="mname">${esc(m.name)}</div>
+      <div class="mmeta">${esc(m.type)}${m.pin?" · "+esc(m.pin):""}</div></div>
+      ${m.needsReview?`<span class="review-badge" title="Flagged for review / todo">⚑ REVIEW</span>`:""}${m.adult?`<span class="adult-badge" title="Adult content">18+</span>`:""}${m.external?`<span class="ext-badge" title="External / manual install — not in MO2 modlist">EXT</span>`:""}`;
+    row.querySelector(".toggle").onclick=e=>{e.stopPropagation();m.enabled=!m.enabled;persist();render(false);};
+    row.querySelector(".minfo").onclick=()=>openInspector(m.id);
+    return row;
+  };
+  const addGroup=(cls,dot,label,count,mods)=>{
+    const g=document.createElement("div");g.className="catgroup"+(cls?" "+cls:"");
+    g.innerHTML=`<h4><span class="cdot" style="background:${dot}"></span>${esc(label)}${count!=null?` <span class="hint">${count}</span>`:""}</h4>`;
+    mods.forEach(m=>g.appendChild(makeRow(m)));
+    el.appendChild(g);
+  };
+  // Pinned "Needs review" queue at the very TOP of the list — all flagged mods across every
+  // category. Skipped when the review filter already limits the whole list to flagged mods.
+  const flagged=state.mods.filter(m=>m.needsReview && pass(m));
+  const topReview = flagged.length>0 && !showOnlyReview;
+  if(topReview){
+    flagged.sort((a,b)=>{const ai=CAT_PREF.indexOf(catNorm(a.cat)),bi=CAT_PREF.indexOf(catNorm(b.cat));
+      return (ai<0?99:ai)-(bi<0?99:bi) || a.name.toLowerCase().localeCompare(b.name.toLowerCase());});
+    addGroup("review-group","#e0a94e","⚑ Needs review",flagged.length,flagged);
+  }
   const groups={};
   state.mods.forEach(m=>{
-    if(q && !(m.name.toLowerCase().includes(q)||m.id.includes(q)||catNorm(m.cat).includes(q))) return;
-    if(adultMode==="only" && !m.adult) return;
-    if(adultMode==="hide" && m.adult) return;
+    if(!pass(m)) return;
+    if(topReview && m.needsReview) return;   // already shown in the top queue
     const k=catNorm(m.cat);
     (groups[k]=groups[k]||{label:catLabel(m.cat),mods:[]}).mods.push(m);
   });
   orderedCats().forEach(cat=>{
     const grp=groups[cat];if(!grp||!grp.mods.length)return;
-    const g=document.createElement("div");g.className="catgroup";
-    g.innerHTML=`<h4><span class="cdot" style="background:${catColor(cat)}"></span>${esc(grp.label)}</h4>`;
-    grp.mods.forEach(m=>{
-      const row=document.createElement("div");
-      row.className="mod"+(m.enabled?"":" disabled")+(selected===m.id?" sel":"")+(errSet.has(m.id)?" haswarn":"");
-      row.innerHTML=`<button class="toggle ${m.enabled?"on":""}" title="Enable/disable"></button>
-        <div class="minfo"><div class="mname">${esc(m.name)}</div>
-        <div class="mmeta">${esc(m.type)}${m.pin?" · "+esc(m.pin):""}</div></div>
-        ${m.adult?`<span class="adult-badge" title="Adult content">18+</span>`:""}${m.external?`<span class="ext-badge" title="External / manual install — not in MO2 modlist">EXT</span>`:""}`;
-      row.querySelector(".toggle").onclick=e=>{e.stopPropagation();m.enabled=!m.enabled;persist();render(false);};
-      row.querySelector(".minfo").onclick=()=>openInspector(m.id);
-      g.appendChild(row);
-    });
-    el.appendChild(g);
+    addGroup(null,catColor(cat),grp.label,null,grp.mods);
   });
   const s=document.getElementById("search");
   s.oninput=e=>{searchTxt=e.target.value;renderList(errSet);const n=document.getElementById("search");n.focus();n.setSelectionRange(n.value.length,n.value.length);};

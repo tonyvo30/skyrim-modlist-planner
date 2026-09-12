@@ -24,6 +24,7 @@ function loadGroupByCluster(){try{groupByCluster=localStorage.getItem("skyrim-pl
 let clusterResolution = 1;    // Louvain resolution: higher = more, smaller clusters
 function saveClusterRes(){try{localStorage.setItem("skyrim-planner-clusterres",String(clusterResolution));}catch(e){}}
 function loadClusterRes(){try{const r=parseFloat(localStorage.getItem("skyrim-planner-clusterres"));if(isFinite(r)&&r>0)clusterResolution=r;}catch(e){}}
+let showOnlyReview=false;     // session filter: show only mods flagged needsReview (the review/todo queue)
 let msgSevHidden=new Set();   // message severities hidden in the Messages tab
 function saveMsgSev(){try{localStorage.setItem("skyrim-planner-msgsev",JSON.stringify([...msgSevHidden]));}catch(e){}}
 function loadMsgSev(){try{const r=localStorage.getItem("skyrim-planner-msgsev");if(r)JSON.parse(r).forEach(s=>msgSevHidden.add(s));}catch(e){}}

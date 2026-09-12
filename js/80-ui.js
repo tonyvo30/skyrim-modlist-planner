@@ -16,6 +16,17 @@ document.getElementById("lay-tree").onclick=()=>{curLayout="tree";if(cyReady)reb
 document.getElementById("lay-force").onclick=()=>{curLayout="force";if(cyReady)rebuildGraph(errNow());else relayout();};
 document.getElementById("toggle-root").onclick=()=>{showRoot=!showRoot;document.getElementById("toggle-root").textContent="Skyrim root: "+(showRoot?"on":"off");if(cyReady)rebuildGraph(new Set(validate().filter(w=>w.sev!=="info").map(w=>w.mod)));};
 document.getElementById("btn-adult").onclick=()=>{setAdultMode(adultMode==="all"?"only":adultMode==="only"?"hide":"all");};
+// ---- needs-review / todo queue ----
+function reviewCount(){return state.mods.filter(m=>m.needsReview).length;}
+function updateReviewBtn(){const b=document.getElementById("toggle-review");if(!b)return;
+  const n=reviewCount();
+  b.textContent="Needs review: "+n;
+  b.classList.toggle("primary",showOnlyReview);
+  b.classList.toggle("has-review",n>0&&!showOnlyReview);}
+document.getElementById("toggle-review").onclick=()=>{
+  if(!showOnlyReview && reviewCount()===0){toast("Nothing flagged for review");return;}
+  showOnlyReview=!showOnlyReview; render(true); updateReviewBtn();
+};
 let legendMin=false;
 function saveLegendMin(){try{localStorage.setItem("skyrim-planner-legendmin",legendMin?"1":"0");}catch(e){}}
 function loadLegendMin(){try{legendMin=localStorage.getItem("skyrim-planner-legendmin")==="1";}catch(e){}}

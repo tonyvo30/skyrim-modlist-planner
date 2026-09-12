@@ -11,6 +11,7 @@ function isFilteredOut(m, lvlMap){
   const a=!!m.adult;
   if(adultMode==="only"&&!a) return true;
   if(adultMode==="hide"&&a) return true;
+  if(showOnlyReview && !m.needsReview) return true;   // review queue: hide everything else
   if(lvlMap && isModelTexCat(m.cat) && lvlMap[m.id]===(showRoot?1:0)) return true;
   return false;
 }
@@ -152,6 +153,7 @@ function cyStyle(){
       "font-family":"Cinzel, serif","font-size":"13px","font-weight":700,"color":"#f4f9fb","border-width":2,"border-color":"#74d4e3","text-margin-y":5}},
     {selector:"node.adultnode",style:{"border-width":3,"border-color":"#a98fd4"}},
     {selector:"node.warnnode",style:{"border-width":3,"border-color":"#e0685f"}},
+    {selector:"node.reviewnode",style:{"outline-width":3,"outline-color":"#e0a94e","outline-opacity":.95,"outline-offset":2}},
     {selector:"node.flash",style:{"border-width":4,"border-color":"#74d4e3"}},
     {selector:"node.inspectnode",style:{"outline-width":4,"outline-color":"#74d4e3","outline-opacity":.9,"outline-offset":3}},
     {selector:"node.dim",style:{"opacity":.12}},
@@ -339,7 +341,7 @@ function rebuildGraph(errSet){
 function refreshGraph(errSet){
   if(!cyReady||!cy)return;
   cy.batch(()=>{
-    state.mods.forEach(m=>{const n=cy.$id(m.id);if(!n.length)return;n.toggleClass("off",!m.enabled);n.toggleClass("warnnode",errSet.has(m.id));n.toggleClass("adultnode",!!m.adult);});
+    state.mods.forEach(m=>{const n=cy.$id(m.id);if(!n.length)return;n.toggleClass("off",!m.enabled);n.toggleClass("warnnode",errSet.has(m.id));n.toggleClass("adultnode",!!m.adult);n.toggleClass("reviewnode",!!m.needsReview);});
   });
 }
 function setAdultMode(m){

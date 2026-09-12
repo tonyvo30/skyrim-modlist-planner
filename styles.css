@@ -250,3 +250,12 @@ img{max-width:100%}
   background:var(--panel,#151b22);border:1px solid var(--line-soft,#2a333d);border-radius:6px}
 .res-wrap input[type=range]{width:110px;accent-color:#74d4e3;cursor:pointer}
 .res-wrap .hint{font-size:11px;white-space:nowrap;color:var(--muted,#8f9aa6)}
+
+/* needs-review / todo flag */
+.review-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;letter-spacing:.3px;
+  color:#e0a94e;background:rgba(224,169,78,.13);border:1px solid rgba(224,169,78,.5);border-radius:4px;padding:1px 5px;white-space:nowrap}
+.mod.needsreview{box-shadow:inset 3px 0 0 #e0a94e}
+.btn.has-review{border-color:rgba(224,169,78,.6);color:#e0a94e}
+.review-check{color:#e0c88a}
+.catgroup.review-group h4{color:#e0c88a}
+.catgroup.review-group{border-bottom:1px solid rgba(224,169,78,.25);margin-bottom:6px;padding-bottom:4px}

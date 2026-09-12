@@ -17,5 +17,6 @@ initGraph();
 updateSizeBtn();
 updateHideL1Btn();
 updateClusterUI();
+updateReviewBtn();
 applyLegendMin();
 initPersistence();

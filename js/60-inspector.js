@@ -42,6 +42,7 @@ function renderInspector(){
     </div>
     <div class="field"><label class="adult-check"><input type="checkbox" id="f-adult" ${e.adult?"checked":""}> Adult content (18+)</label></div>
     <div class="field"><label class="adult-check"><input type="checkbox" id="f-external" ${e.external?"checked":""}> External — manual install, not in MO2 modlist (excluded from Reconcile)</label></div>
+    <div class="field"><label class="adult-check review-check"><input type="checkbox" id="f-review" ${e.needsReview?"checked":""}> ⚑ Needs review / todo — flag for follow-up (wire dependencies, patch reinstall, a note to revisit)</label></div>
     ${relBlock("requires",e)}
     ${anyOfBlock(e)}
     ${relBlock("patchFor",e)}
@@ -64,6 +65,7 @@ function renderInspector(){
   document.getElementById("f-en").onchange=ev=>{editing.enabled=ev.target.value==="1";};
   document.getElementById("f-adult").onchange=ev=>{editing.adult=ev.target.checked;};
   document.getElementById("f-external").onchange=ev=>{editing.external=ev.target.checked;};
+  document.getElementById("f-review").onchange=ev=>{editing.needsReview=ev.target.checked;};
 
   REL_TYPES.forEach(([key])=>wireAddRel(key));
   wireAnyOf();

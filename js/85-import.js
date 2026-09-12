@@ -132,7 +132,9 @@ function buildEntry(name,enabled,asImported){
   const metaCat=catFromMeta(name);   // real MO2 category from meta.ini, if a mods folder was read
   const t=resolveTemplate(name);
   if(t){const c=clone(t);c.enabled=enabled;if(metaCat)c.cat=metaCat;return c;}  // meta.ini wins over template's default
-  return {id:uniqId(slug(name)),name,cat:metaCat||(asImported?"Imported":"Other"),type:itype(name),enabled,pin:"",requires:[],conflicts:[],loadAfter:[],note:"Imported from MO2"};
+  // Unknown (non-template) mod: flag needsReview so it surfaces in the review queue until you've
+  // wired its dependencies/fields. Template-matched mods come pre-wired, so they are not flagged.
+  return {id:uniqId(slug(name)),name,cat:metaCat||(asImported?"Imported":"Other"),type:itype(name),enabled,pin:"",requires:[],conflicts:[],loadAfter:[],note:"Imported from MO2",needsReview:true,addedAt:Date.now()};
 }
 // pull in any known template a required mod-ref points to but the profile didn't list (e.g. SKSE installed to root)
 function closureAddMissing(list){
