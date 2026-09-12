@@ -13,8 +13,25 @@
 let mo2Available=false;      // did the serve.py /api endpoints answer?
 let mo2Profiles=[];          // profile names from the server
 let mo2Profile="";           // selected profile
+let mo2Defaults={base:"",instance:""};   // serve.py's baked-in default paths (for placeholders)
 function saveMo2Profile(){try{localStorage.setItem("skyrim-planner-mo2profile",mo2Profile);}catch(e){}}
 function loadMo2Profile(){try{mo2Profile=localStorage.getItem("skyrim-planner-mo2profile")||"";}catch(e){}}
+
+// Path overrides. Base Directory = the folder with mods\/profiles\/downloads\; Instance path =
+// the folder with categories.dat. Blank = use serve.py's baked-in defaults. Sent to every /api call.
+let mo2BaseDir="", mo2InstancePath="";
+function loadMo2Paths(){try{mo2BaseDir=localStorage.getItem("skyrim-planner-mo2base")||"";mo2InstancePath=localStorage.getItem("skyrim-planner-mo2instance")||"";}catch(e){}}
+function saveMo2Paths(){try{localStorage.setItem("skyrim-planner-mo2base",mo2BaseDir);localStorage.setItem("skyrim-planner-mo2instance",mo2InstancePath);}catch(e){}}
+// build an /api URL carrying the path overrides (and any extra params)
+function mo2ApiUrl(path,extra){
+  const p=new URLSearchParams(extra||{});
+  if(mo2BaseDir.trim()) p.set("base",mo2BaseDir.trim());
+  if(mo2InstancePath.trim()) p.set("instance",mo2InstancePath.trim());
+  const qs=p.toString();
+  return path+(qs?("?"+qs):"");
+}
+// serve.py runs over http(s) on localhost; a file:// page can't reach it, so sync is unavailable there.
+function mo2ServedContext(){return location.protocol==="http:"||location.protocol==="https:";}
 
 // which separator groups Sync includes: { [separatorName|NOSEP_KEY]: bool }. Persisted, so a
 // one-click Sync honours the choices you set in the Separators… dialog. Untouched groups default
@@ -39,16 +56,20 @@ function mo2SepSet(modlistText){
 async function mo2Init(){
   loadMo2Profile();
   loadMo2SepChoice();
+  loadMo2Paths();
+  // file:// can't talk to serve.py — disable sync outright (no failed fetch, no console noise)
+  if(!mo2ServedContext()){ mo2Available=false; updateMo2UI(); return; }
   try{
-    const resp=await fetch("/api/profiles",{cache:"no-store"});
+    const resp=await fetch(mo2ApiUrl("/api/profiles"),{cache:"no-store"});
     if(!resp.ok) throw new Error("no api");
     const data=await resp.json();
     if(!Array.isArray(data.profiles)) throw new Error("bad api");
     mo2Available=true;
     mo2Profiles=data.profiles;
+    if(data.defaults) mo2Defaults=data.defaults;
     if(mo2Profiles.length && !mo2Profiles.includes(mo2Profile)) mo2Profile=mo2Profiles[0];
   }catch(e){
-    mo2Available=false;   // plain static server / file:// — no sync, Import MO2 still works
+    mo2Available=false;   // plain static server (no serve.py) — no sync, Import MO2 still works
   }
   updateMo2UI();
 }
@@ -59,7 +80,7 @@ async function mo2Sync(){
   const syncBtn=document.getElementById("mo2-sync"), prevLabel=syncBtn?syncBtn.textContent:"";
   if(syncBtn){syncBtn.disabled=true;syncBtn.textContent="Syncing…";}
   try{
-    const resp=await fetch("/api/sync?profile="+encodeURIComponent(mo2Profile),{cache:"no-store"});
+    const resp=await fetch(mo2ApiUrl("/api/sync",{profile:mo2Profile}),{cache:"no-store"});
     const data=await resp.json();
     if(!resp.ok||data.error){toast("Sync failed — "+(data.error||("HTTP "+resp.status)));return;}
 
@@ -117,20 +138,54 @@ async function openMo2Seps(){
   if(box)box.innerHTML=`<div class="hint">Loading ${esc(mo2Profile)}…</div>`;
   if(modal)modal.classList.add("show");
   try{
-    const resp=await fetch("/api/modlist?profile="+encodeURIComponent(mo2Profile),{cache:"no-store"});
+    const resp=await fetch(mo2ApiUrl("/api/modlist",{profile:mo2Profile}),{cache:"no-store"});
     const data=await resp.json();
     if(!resp.ok||data.error){if(box)box.innerHTML=`<div class="hint">Couldn't load modlist — ${esc(data.error||("HTTP "+resp.status))}</div>`;return;}
     renderMo2SepList(data.modlist||"");
   }catch(e){ if(box)box.innerHTML=`<div class="hint">Couldn't load modlist — ${esc(e&&e.message||"network error")}</div>`; }
 }
 
+/* ---- Paths dialog: which MO2 folders Sync reads from ---- */
+function openMo2Instance(){
+  const modal=document.getElementById("modal-mo2instance"); if(!modal)return;
+  const baseInput=document.getElementById("mo2-inst-base"), pathInput=document.getElementById("mo2-inst-path");
+  if(baseInput){ baseInput.value=mo2BaseDir; baseInput.placeholder=mo2Defaults.base||"…folder with mods\\ profiles\\ downloads\\"; }
+  if(pathInput){ pathInput.value=mo2InstancePath; pathInput.placeholder=mo2Defaults.instance||"…folder with categories.dat"; }
+  const bs=document.getElementById("mo2-inst-base-state"), cs=document.getElementById("mo2-inst-cat-state");
+  if(bs)bs.textContent=""; if(cs)cs.textContent="";
+  modal.classList.add("show");
+}
+async function saveMo2InstanceDialog(){
+  const baseInput=document.getElementById("mo2-inst-base"), pathInput=document.getElementById("mo2-inst-path");
+  mo2BaseDir=baseInput?baseInput.value.trim():"";
+  mo2InstancePath=pathInput?pathInput.value.trim():"";
+  saveMo2Paths();
+  // re-probe with the new paths so the profile list + defaults refresh
+  const bs=document.getElementById("mo2-inst-base-state"), cs=document.getElementById("mo2-inst-cat-state");
+  try{
+    const data=await fetch(mo2ApiUrl("/api/profiles"),{cache:"no-store"}).then(r=>r.json());
+    mo2Profiles=Array.isArray(data.profiles)?data.profiles:[];
+    if(data.defaults)mo2Defaults=data.defaults;
+    if(mo2Profiles.length && !mo2Profiles.includes(mo2Profile))mo2Profile=mo2Profiles[0];
+    saveMo2Profile(); updateMo2UI();
+    if(bs)bs.textContent=data.baseFound?`✓ found · ${mo2Profiles.length} profile${mo2Profiles.length!==1?"s":""}`:"⚠ base directory not found — check the path";
+    if(cs)cs.textContent=data.categoriesFound?"✓ categories.dat found":"categories.dat not found here — using the built-in category map";
+    if(data.baseFound && mo2Profiles.length){ document.getElementById("modal-mo2instance").classList.remove("show"); toast("Paths set — "+mo2Profiles.length+" profiles"); }
+  }catch(e){ if(bs)bs.textContent="⚠ couldn't reach serve.py"; }
+}
+
 /* wiring */
 (function(){
   const profileSel=document.getElementById("mo2-profile"), syncBtn=document.getElementById("mo2-sync"),
         sepBtn=document.getElementById("mo2-seps"), sepClose=document.getElementById("mo2sep-close"),
-        sepModal=document.getElementById("modal-mo2seps");
+        sepModal=document.getElementById("modal-mo2seps"),
+        instBtn=document.getElementById("mo2-instance"), instModal=document.getElementById("modal-mo2instance"),
+        instCancel=document.getElementById("mo2-inst-cancel"), instSave=document.getElementById("mo2-inst-save");
   if(profileSel)profileSel.onchange=()=>{mo2Profile=profileSel.value;saveMo2Profile();};
   if(syncBtn)syncBtn.onclick=mo2Sync;
   if(sepBtn)sepBtn.onclick=openMo2Seps;
   if(sepClose)sepClose.onclick=()=>{if(sepModal)sepModal.classList.remove("show");};
+  if(instBtn)instBtn.onclick=openMo2Instance;
+  if(instCancel)instCancel.onclick=()=>{if(instModal)instModal.classList.remove("show");};
+  if(instSave)instSave.onclick=saveMo2InstanceDialog;
 })();

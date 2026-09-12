@@ -26,6 +26,7 @@
     <span class="persist local" id="persist"><span class="dot"></span><span id="persist-t">local</span></span>
     <span class="mo2sync" id="mo2sync" hidden>
       <select class="btn mo2-profile" id="mo2-profile" title="MO2 profile to sync from"></select>
+      <button class="btn" id="mo2-instance" title="Set the MO2 folder paths Sync reads from">Paths</button>
       <button class="btn" id="mo2-seps" title="Choose which MO2 separator groups Sync includes (remembered)">Separators…</button>
       <button class="btn" id="mo2-sync" title="Read this profile's modlist and mod categories from your MO2 instance (via serve.py) and merge into the planner">Sync from MO2</button>
     </span>
@@ -127,6 +128,28 @@
     <div class="modal-actions">
       <button class="btn" id="json-cancel">Close</button>
       <button class="btn primary" id="json-action">Save file</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-mo2instance">
+  <div class="modal">
+    <h3>MO2 paths</h3>
+    <p>Where <b>Sync from MO2</b> reads your modlist and mod categories. Leave a field blank to use the default baked into <code>serve.py</code> (shown as the placeholder).</p>
+    <div class="field" style="margin-bottom:14px">
+      <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">Base Directory <span class="hint">— folder where <code>mods\</code>, <code>profiles\</code> and <code>downloads\</code> are located</span></label>
+      <input id="mo2-inst-base" style="width:100%" placeholder="">
+      <span class="hint" id="mo2-inst-base-state"></span>
+    </div>
+    <div class="field">
+      <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">Instance path <span class="hint">— folder containing <code>categories.dat</code></span></label>
+      <input id="mo2-inst-path" style="width:100%" placeholder="">
+      <span class="hint" id="mo2-inst-cat-state"></span>
+    </div>
+    <p class="hint" style="margin:-2px 0 14px;color:var(--frost-dim)">↳ In MO2, the folder icon in the top toolbar → <b>Open Instance folder</b> opens the Instance path.</p>
+    <div class="modal-actions">
+      <button class="btn" id="mo2-inst-cancel">Cancel</button>
+      <button class="btn primary" id="mo2-inst-save">Save &amp; reconnect</button>
     </div>
   </div>
 </div>

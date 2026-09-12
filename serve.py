@@ -7,28 +7,34 @@ Run this INSTEAD of `python -m http.server`:
     python serve.py            # serves on http://localhost:8000
     python serve.py 8080       # ...or another port
 
-It serves the planner's static files AND exposes two read-only endpoints the
+It serves the planner's static files AND exposes read-only endpoints the
 "Sync from MO2" button uses. Because this is a server process (not the sandboxed
 browser page), it can read your MO2 files by path directly — no folder picker,
 no 90k-file scan, works in any browser including Brave:
 
-    GET /api/profiles          -> {"profiles": [...], "instance": "..."}
-    GET /api/sync?profile=Name -> {"profile","modlist","categories","modsWithCategory","categoryCount"}
+    GET /api/profiles                 -> { profiles, base, instance, ...found flags, defaults }
+    GET /api/modlist?profile=Name     -> { profile, modlist }               (for the separator picker)
+    GET /api/sync?profile=Name        -> { profile, modlist, categories, ... }
+
+Two locations matter, and each endpoint accepts them as optional overrides (set from
+the app's "Instance..." dialog; omitted -> the defaults below):
+    ?base=<Base Directory>    folder that holds mods, profiles and downloads
+    ?instance=<Instance path> folder that holds categories.dat (MO2's "Open Instance folder")
 
 Only these paths are read; nothing is written. Bound to 127.0.0.1 (localhost only).
-
-Edit the two paths below if your MO2 install ever moves (env vars override them:
-MO2_INSTANCE, MO2_CATEGORIES).
+Env vars also override the defaults: MO2_BASE, MO2_INSTANCE.
 """
 import http.server, socketserver, json, os, re, sys, urllib.parse
 
-# ---- config -------------------------------------------------------------------
-MO2_INSTANCE   = os.environ.get("MO2_INSTANCE",
+# ---- default config (used when the app doesn't send an override) --------------
+# Base Directory — where mods\, profiles\ and downloads\ live:
+MO2_BASE     = os.environ.get("MO2_BASE",
                     r"D:\Games\Mod Organizer 2")
-CATEGORIES_DAT = os.environ.get("MO2_CATEGORIES",
-                    r"C:\Users\USER\AppData\Local\ModOrganizer\MO2 Instance\categories.dat")
-DEFAULT_PORT   = 8000
-WEBROOT        = os.path.dirname(os.path.abspath(__file__))
+# Instance path — the folder that contains categories.dat (MO2's "Open Instance folder"):
+MO2_INSTANCE = os.environ.get("MO2_INSTANCE",
+                    r"C:\Users\USER\AppData\Local\ModOrganizer\MO2 Instance")
+DEFAULT_PORT = 8000
+WEBROOT      = os.path.dirname(os.path.abspath(__file__))
 # -------------------------------------------------------------------------------
 
 # categories.dat spells a few names differently from the planner's curated set; re-spell those
@@ -64,12 +70,27 @@ def canonical(name):
     return CANON.get(name.strip().lower(), name.strip())
 
 
-def load_category_ids():
-    """id -> category name, from the user's categories.dat (pipe-delimited 'id|name|parent').
-       Authoritative for this instance; falls back to the default set if unreadable."""
+def resolve_paths(query):
+    """Return (base_dir, instance_dir, categories_dat) for this request. The app may send
+       ?base=<Base Directory> and ?instance=<Instance path>; either falls back to its default.
+       categories.dat lives in the instance folder; if it isn't there, a portable copy in the
+       base folder is tried before giving up (load_category_ids then uses the built-in map)."""
+    base = (query.get("base") or [""])[0].strip() or MO2_BASE
+    instance = (query.get("instance") or [""])[0].strip() or MO2_INSTANCE
+    cat = os.path.join(instance, "categories.dat")
+    if not os.path.isfile(cat):
+        portable = os.path.join(base, "categories.dat")
+        if os.path.isfile(portable):
+            cat = portable
+    return base, instance, cat
+
+
+def load_category_ids(cat_path):
+    """id -> category name, from categories.dat (pipe-delimited 'id|name|parent').
+       Authoritative for the instance; falls back to the default set if unreadable."""
     ids = {}
     try:
-        with open(CATEGORIES_DAT, encoding="utf-8", errors="ignore") as f:
+        with open(cat_path, encoding="utf-8", errors="ignore") as f:
             for line in f:
                 parts = line.rstrip("\n").split("|")
                 if len(parts) >= 2 and parts[0].strip().isdigit():
@@ -79,8 +100,8 @@ def load_category_ids():
     return ids or dict(FALLBACK_CATS)
 
 
-def list_profiles():
-    pdir = os.path.join(MO2_INSTANCE, "profiles")
+def list_profiles(base):
+    pdir = os.path.join(base, "profiles")
     try:
         return sorted(
             (d for d in os.listdir(pdir) if os.path.isdir(os.path.join(pdir, d))),
@@ -89,18 +110,18 @@ def list_profiles():
         return []
 
 
-def read_modlist(profile):
-    path = os.path.join(MO2_INSTANCE, "profiles", profile, "modlist.txt")
+def read_modlist(base, profile):
+    path = os.path.join(base, "profiles", profile, "modlist.txt")
     with open(path, encoding="utf-8", errors="ignore") as f:
         return f.read()
 
 
-def read_mod_categories():
+def read_mod_categories(base, cat_path):
     """mod folder name -> resolved category name, reading each mods/<mod>/meta.ini by path.
        Only ~one file per mod (no recursive asset scan)."""
-    id_map = load_category_ids()
+    id_map = load_category_ids(cat_path)
     out = {}
-    moddir = os.path.join(MO2_INSTANCE, "mods")
+    moddir = os.path.join(base, "mods")
     try:
         entries = os.listdir(moddir)
     except OSError:
@@ -137,32 +158,48 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _resolve_profile(self, base, query):
+        """Return (profile, profiles) with the requested profile validated, or (None, profiles)."""
+        profiles = list_profiles(base)
+        profile = (query.get("profile") or [""])[0] or (profiles[0] if profiles else "")
+        return (profile if profile in profiles else None), profiles
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(parsed.query)
+
         if parsed.path == "/api/profiles":
-            return self._json({"profiles": list_profiles(), "instance": MO2_INSTANCE})
+            base, instance, cat = resolve_paths(query)
+            return self._json({
+                "profiles": list_profiles(base),
+                "base": base,
+                "instance": instance,
+                "categoriesDat": cat,
+                "baseFound": os.path.isdir(base),
+                "categoriesFound": os.path.isfile(cat),
+                "defaults": {"base": MO2_BASE, "instance": MO2_INSTANCE},
+            })
+
         if parsed.path == "/api/modlist":
-            # just the raw modlist text (for the separator picker) — no meta.ini reads
-            query = urllib.parse.parse_qs(parsed.query)
-            profiles = list_profiles()
-            profile = (query.get("profile") or [""])[0] or (profiles[0] if profiles else "")
-            if profile not in profiles:
-                return self._json({"error": f"profile '{profile}' not found", "profiles": profiles}, 404)
+            base, _, _ = resolve_paths(query)
+            profile, profiles = self._resolve_profile(base, query)
+            if profile is None:
+                return self._json({"error": "profile not found", "profiles": profiles}, 404)
             try:
-                return self._json({"profile": profile, "modlist": read_modlist(profile)})
+                return self._json({"profile": profile, "modlist": read_modlist(base, profile)})
             except OSError as e:
                 return self._json({"error": f"could not read modlist.txt: {e}"}, 500)
+
         if parsed.path == "/api/sync":
-            query = urllib.parse.parse_qs(parsed.query)
-            profiles = list_profiles()
-            profile = (query.get("profile") or [""])[0] or (profiles[0] if profiles else "")
-            if profile not in profiles:
-                return self._json({"error": f"profile '{profile}' not found", "profiles": profiles}, 404)
+            base, instance, cat = resolve_paths(query)
+            profile, profiles = self._resolve_profile(base, query)
+            if profile is None:
+                return self._json({"error": "profile not found", "profiles": profiles}, 404)
             try:
-                modlist = read_modlist(profile)
+                modlist = read_modlist(base, profile)
             except OSError as e:
                 return self._json({"error": f"could not read modlist.txt: {e}"}, 500)
-            cats, cat_count = read_mod_categories()
+            cats, cat_count = read_mod_categories(base, cat)
             return self._json({
                 "profile": profile,
                 "modlist": modlist,
@@ -170,6 +207,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "modsWithCategory": len(cats),
                 "categoryCount": cat_count,
             })
+
         return super().do_GET()
 
     def log_message(self, *args):
@@ -182,9 +220,10 @@ def main():
         port = int(sys.argv[1])
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("127.0.0.1", port), Handler) as httpd:
+        cat = os.path.join(MO2_INSTANCE, "categories.dat")
         print(f"Modlist Planner + MO2 sync  ->  http://localhost:{port}")
-        print(f"  instance       : {MO2_INSTANCE}  {'(found)' if os.path.isdir(MO2_INSTANCE) else '(NOT FOUND — edit MO2_INSTANCE)'}")
-        print(f"  categories.dat : {CATEGORIES_DAT}  {'(found)' if os.path.isfile(CATEGORIES_DAT) else '(missing — using built-in default map)'}")
+        print(f"  base directory : {MO2_BASE}  {'(found)' if os.path.isdir(MO2_BASE) else '(NOT FOUND — set it in the app or edit MO2_BASE)'}")
+        print(f"  instance path  : {MO2_INSTANCE}  {'(categories.dat found)' if os.path.isfile(cat) else '(no categories.dat — built-in default map used)'}")
         print("  Ctrl+C to stop")
         try:
             httpd.serve_forever()
