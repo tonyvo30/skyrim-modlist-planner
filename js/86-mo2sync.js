@@ -88,20 +88,24 @@ async function mo2Sync(){
     const cats=data.categories||{};
     Object.keys(cats).forEach(name=>{ metaCatByName[ikey(name)]=cats[name]; });
     saveMetaCat();
+    // comments: { modFolderName: note } -> MO2 meta.ini notes, remembered the same way as categories
+    const comments=data.comments||{};
+    Object.keys(comments).forEach(name=>{ metaNoteByName[ikey(name)]=comments[name]; });
+    saveMetaNote();
 
     const entries=parseMO2(data.modlist||"", mo2SepSet(data.modlist||""));   // honour the Separators… choices
     if(!entries.length){toast("That profile's modlist is empty (after separator filtering)");return;}
 
     // merge — identical rules to Import → Merge/update
-    let added=0,updated=0;
+    let added=0,updated=0,noted=0;   // noted = existing mods whose default/empty note was backfilled from MO2
     entries.forEach(({name,enabled})=>{
       const template=resolveTemplate(name);
       const existing=template?state.mods.find(m=>m.id===template.id):state.mods.find(m=>ikey(m.name)===ikey(name));
-      if(existing){existing.enabled=enabled;const metaCat=catFromMeta(name);if(metaCat)existing.cat=metaCat;updated++;}
+      if(existing){existing.enabled=enabled;const metaCat=catFromMeta(name);if(metaCat)existing.cat=metaCat;if(backfillMo2Note(existing,name))noted++;updated++;}
       else{state.mods.push(buildEntry(name,enabled,false));added++;}
     });
     selected=null;editing=null;persist();render(true);
-    toast(`Synced ${data.profile} — ${added} new, ${updated} updated · ${data.modsWithCategory||0} categories`);
+    toast(`Synced ${data.profile} — ${added} new, ${updated} updated · ${data.modsWithCategory||0} categories · ${data.modsWithNote||0} notes`+(noted?` (${noted} backfilled)`:``));
   }catch(e){
     console.error("MO2 sync failed",e);
     toast("Sync failed — "+(e&&e.message||"network error"));

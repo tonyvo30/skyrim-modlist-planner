@@ -6,6 +6,7 @@ loadHideL1MT();
 loadGroupByCluster();
 loadClusterRes();
 loadMetaCat();
+loadMetaNote();
 loadMsgSev();
 loadLegendMin();
 render(true);

@@ -52,6 +52,30 @@ let metaCatByName={};
 function saveMetaCat(){try{localStorage.setItem("skyrim-planner-metacat",JSON.stringify(metaCatByName));}catch(e){}}
 function loadMetaCat(){try{const r=localStorage.getItem("skyrim-planner-metacat");if(r)metaCatByName=JSON.parse(r)||{};}catch(e){}}
 function catFromMeta(name){return metaCatByName[ikey(name)]||null;}
+// name(normalised) -> MO2 note, from each mod's meta.ini "comments=" line. Parallel to metaCatByName
+// (same one-time-pick / persisted behaviour) and consumed by buildEntry + the import/sync note merge.
+let metaNoteByName={};
+function saveMetaNote(){try{localStorage.setItem("skyrim-planner-metanote",JSON.stringify(metaNoteByName));}catch(e){}}
+function loadMetaNote(){try{const r=localStorage.getItem("skyrim-planner-metanote");if(r)metaNoteByName=JSON.parse(r)||{};}catch(e){}}
+function noteFromMeta(name){return metaNoteByName[ikey(name)]||null;}
+// MO2 wraps a meta.ini "comments=" value in double quotes when it contains a comma (QSettings
+// escaping). Strip one surrounding pair and padding; '' means an empty note (skip it).
+function stripIniQuotes(value){
+  let v=(value||"").trim();
+  if(v.length>=2 && v[0]==='"' && v[v.length-1]==='"') v=v.slice(1,-1);
+  return v.trim();
+}
+// The placeholder buildEntry stamps on a new mod that has no MO2 note. It doubles as a provenance
+// marker: the note merge treats a note still equal to this as auto-generated and safe to overwrite
+// with the real MO2 note; any note you've actually written is kept.
+const MO2_DEFAULT_NOTE="Imported from MO2";
+// Fill a mod's note from its MO2 comment during an import/sync merge, without clobbering real notes:
+// only an empty note or the untouched default placeholder is replaced. Returns true if it changed.
+function backfillMo2Note(mod,name){
+  const metaNote=noteFromMeta(name);
+  if(metaNote && (!mod.note || mod.note===MO2_DEFAULT_NOTE)){ mod.note=metaNote; return true; }
+  return false;
+}
 
 const PREFIX_RE=/^(Creation Club|DLC|Unmanaged|Root|Managed):\s*/i;
 // Parse a modlist.txt into {name, enabled}. Separators, the DLC:/Creation Club:/Unmanaged:
@@ -130,11 +154,12 @@ function chosenSepSet(which){
 }
 function buildEntry(name,enabled,asImported){
   const metaCat=catFromMeta(name);   // real MO2 category from meta.ini, if a mods folder was read
+  const metaNote=noteFromMeta(name); // MO2 "comments=" note, if a mods folder / sync provided one
   const t=resolveTemplate(name);
-  if(t){const c=clone(t);c.enabled=enabled;if(metaCat)c.cat=metaCat;return c;}  // meta.ini wins over template's default
+  if(t){const c=clone(t);c.enabled=enabled;if(metaCat)c.cat=metaCat;if(metaNote&&!c.note)c.note=metaNote;return c;}  // meta.ini wins over template's default; keep a curated note if it has one
   // Unknown (non-template) mod: flag needsReview so it surfaces in the review queue until you've
   // wired its dependencies/fields. Template-matched mods come pre-wired, so they are not flagged.
-  return {id:uniqId(slug(name)),name,cat:metaCat||(asImported?"Imported":"Other"),type:itype(name),enabled,pin:"",requires:[],conflicts:[],loadAfter:[],note:"Imported from MO2",needsReview:true,addedAt:Date.now()};
+  return {id:uniqId(slug(name)),name,cat:metaCat||(asImported?"Imported":"Other"),type:itype(name),enabled,pin:"",requires:[],conflicts:[],loadAfter:[],note:metaNote||MO2_DEFAULT_NOTE,needsReview:true,addedAt:Date.now()};
 }
 // pull in any known template a required mod-ref points to but the profile didn't list (e.g. SKSE installed to root)
 function closureAddMissing(list){
@@ -164,7 +189,7 @@ function doImport(mode){
     entries.forEach(({name,enabled})=>{
       const t=resolveTemplate(name);
       const existing=t?state.mods.find(m=>m.id===t.id):state.mods.find(m=>ikey(m.name)===ikey(name));
-      if(existing){existing.enabled=enabled;const mc=catFromMeta(name);if(mc)existing.cat=mc;updated++;}  // meta.ini category applied if available
+      if(existing){existing.enabled=enabled;const mc=catFromMeta(name);if(mc)existing.cat=mc;backfillMo2Note(existing,name);updated++;}  // meta.ini category + note applied if available
       else{state.mods.push(buildEntry(name,enabled,asImported));added++;}
     });
   }
@@ -264,18 +289,25 @@ document.getElementById("mo2-mods").onchange=async e=>{
   // thrashes GC and stutters the whole browser (typing, even the mouse cursor) until a refresh.
   // The ~n meta.ini File handles in metaFiles stay valid — a File is an independent Blob ref.
   e.target.value="";
-  let unknown=new Set(),read=0;   // merge into the persisted map (don't wipe) so partial folder picks accumulate
+  let unknown=new Set(),read=0,notes=0;   // merge into the persisted maps (don't wipe) so partial folder picks accumulate
   for(const f of metaFiles){
     let text;try{text=await f.text();}catch(_){continue;}
-    const m=text.match(/^\s*category\s*=\s*"?([0-9,\-]+)"?/im);if(!m)continue;
-    const primary=(m[1].split(",")[0]||"").trim();
-    if(!primary||primary==="-1")continue;
-    const cat=NEXUS_CAT_IDS[primary]||("Category "+primary);
-    if(!NEXUS_CAT_IDS[primary])unknown.add(primary);
     const modName=(f.webkitRelativePath||"").split(/[/\\]/).slice(-2)[0];
-    if(modName){metaCatByName[ikey(modName)]=cat;read++;}
+    if(!modName)continue;
+    const key=ikey(modName);
+    const m=text.match(/^\s*category\s*=\s*"?([0-9,\-]+)"?/im);
+    if(m){
+      const primary=(m[1].split(",")[0]||"").trim();
+      if(primary&&primary!=="-1"){
+        metaCatByName[key]=NEXUS_CAT_IDS[primary]||("Category "+primary);
+        if(!NEXUS_CAT_IDS[primary])unknown.add(primary);
+        read++;
+      }
+    }
+    const cm=text.match(/^\s*comments\s*=(.*)$/im);
+    if(cm){const note=stripIniQuotes(cm[1]);if(note){metaNoteByName[key]=note;notes++;}}
   }
-  saveMetaCat();
+  saveMetaCat();saveMetaNote();
   const total=Object.keys(metaCatByName).length;
-  if(st)st.textContent=read?`Read ${read} categories · ${total} remembered`+(unknown.size?` · unknown IDs: ${[...unknown].join(", ")}`:""):"No meta.ini categories found";
+  if(st)st.textContent=read?`Read ${read} categories · ${notes} notes · ${total} remembered`+(unknown.size?` · unknown IDs: ${[...unknown].join(", ")}`:""):"No meta.ini categories found";
 };

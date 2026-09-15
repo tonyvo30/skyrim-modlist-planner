@@ -14,7 +14,7 @@ no 90k-file scan, works in any browser including Brave:
 
     GET /api/profiles                 -> { profiles, base, instance, ...found flags, defaults }
     GET /api/modlist?profile=Name     -> { profile, modlist }               (for the separator picker)
-    GET /api/sync?profile=Name        -> { profile, modlist, categories, ... }
+    GET /api/sync?profile=Name        -> { profile, modlist, categories, comments (meta.ini notes), ... }
 
 Two locations matter, and each endpoint accepts them as optional overrides (set from
 the app's "Instance..." dialog; omitted -> the defaults below):
@@ -64,10 +64,21 @@ FALLBACK_CATS = {
     "47": "Miscellaneous",
 }
 CAT_LINE_RE = re.compile(r'^\s*category\s*=\s*"?([0-9,\-]+)"?', re.I | re.M)
+COMMENT_LINE_RE = re.compile(r'^\s*comments\s*=(.*)$', re.I | re.M)
 
 
 def canonical(name):
     return CANON.get(name.strip().lower(), name.strip())
+
+
+def clean_comment(value):
+    """MO2 stores the meta.ini 'comments=' note verbatim, but wraps it in double quotes
+       when it contains a comma (QSettings escaping). Strip one surrounding pair and any
+       padding; return '' for an empty/whitespace note so it's simply skipped."""
+    value = value.strip()
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        value = value[1:-1]
+    return value.strip()
 
 
 def resolve_paths(query):
@@ -117,15 +128,17 @@ def read_modlist(base, profile):
 
 
 def read_mod_categories(base, cat_path):
-    """mod folder name -> resolved category name, reading each mods/<mod>/meta.ini by path.
-       Only ~one file per mod (no recursive asset scan)."""
+    """Read each mods/<mod>/meta.ini by path (only ~one file per mod, no recursive asset scan) and
+       return (categories, comments, category_count):
+         categories -> { mod folder name: resolved category name }   (from 'category=')
+         comments   -> { mod folder name: note text }                (from 'comments=', non-empty only)"""
     id_map = load_category_ids(cat_path)
-    out = {}
+    cats, comments = {}, {}
     moddir = os.path.join(base, "mods")
     try:
         entries = os.listdir(moddir)
     except OSError:
-        return out, len(id_map)
+        return cats, comments, len(id_map)
     for d in entries:
         meta = os.path.join(moddir, d, "meta.ini")
         if not os.path.isfile(meta):
@@ -136,13 +149,16 @@ def read_mod_categories(base, cat_path):
         except OSError:
             continue
         m = CAT_LINE_RE.search(txt)
-        if not m:
-            continue
-        primary = m.group(1).split(",")[0].strip()
-        if not primary or primary in ("-1", "0"):
-            continue
-        out[d] = id_map.get(primary, "Category " + primary)
-    return out, len(id_map)
+        if m:
+            primary = m.group(1).split(",")[0].strip()
+            if primary and primary not in ("-1", "0"):
+                cats[d] = id_map.get(primary, "Category " + primary)
+        cm = COMMENT_LINE_RE.search(txt)
+        if cm:
+            note = clean_comment(cm.group(1))
+            if note:
+                comments[d] = note
+    return cats, comments, len(id_map)
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -199,12 +215,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 modlist = read_modlist(base, profile)
             except OSError as e:
                 return self._json({"error": f"could not read modlist.txt: {e}"}, 500)
-            cats, cat_count = read_mod_categories(base, cat)
+            cats, comments, cat_count = read_mod_categories(base, cat)
             return self._json({
                 "profile": profile,
                 "modlist": modlist,
                 "categories": cats,
+                "comments": comments,
                 "modsWithCategory": len(cats),
+                "modsWithNote": len(comments),
                 "categoryCount": cat_count,
             })
 
