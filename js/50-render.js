@@ -62,7 +62,7 @@ function renderWarnings(warns){
     const m=byId(w.mod);
     const d=document.createElement("div");
     d.className="warn-item "+w.sev;
-    d.innerHTML=`<div class="wh"><span class="wsev ${w.sev}">${w.sev}</span><span class="wmod">${m?esc(m.name):w.mod}</span></div><div class="wmsg">${esc(w.msg)}</div>`;
+    d.innerHTML=`<div class="wh"><span class="wsev ${w.sev}">${w.sev}</span><span class="wmod">${m?esc(m.name):esc(w.mod)}</span></div><div class="wmsg">${esc(w.msg)}</div>`;
     d.onclick=()=>{openInspector(w.mod); if(cyReady&&cy){const n=cy.$id(w.mod);if(n.length){cy.animate({center:{eles:n},zoom:1.1},{duration:300});flash(w.mod);}}};
     el.appendChild(d);
   });

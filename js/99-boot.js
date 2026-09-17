@@ -9,6 +9,7 @@ loadMetaCat();
 loadMetaNote();
 loadMsgSev();
 loadLegendMin();
+initPersistence();   // load the saved catalog BEFORE the first paint so the seed doesn't flash then get replaced (N-12)
 render(true);
 initGraph();
 // reflect loaded adult mode on the toolbar button
@@ -21,4 +22,3 @@ updateClusterUI();
 updateReviewBtn();
 applyLegendMin();
 if(typeof mo2Init==="function") mo2Init();   // async: probe serve.py, reveal Sync if available
-initPersistence();

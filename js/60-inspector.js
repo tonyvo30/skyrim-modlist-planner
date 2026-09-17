@@ -1,6 +1,8 @@
 /* ---------- inspector ---------- */
 const REL_TYPES=[["requires","Requires (hard)","req"],["conflicts","Conflicts with","conf"],["loadAfter","Load after","la"],["patchFor","Patches (main mods)","pf"]];
-function openInspector(id){selected=id;editing=id==="__new__"?newMod():clone(byId(id));curTab="inspector";
+function openInspector(id){
+  if(id!=="__new__" && !byId(id)){toast("That mod is no longer in the catalog.");return;}  // guard clone(undefined) → JSON.parse(undefined) throw (F-6)
+  selected=id;editing=id==="__new__"?newMod():clone(byId(id));curTab="inspector";
   setTab("inspector",true);   // switch the panel WITHOUT rendering; render(false) below builds the inspector once
   render(false);
   // Center only when the node is off-screen. Panning an already-visible node forces a needless
@@ -27,7 +29,7 @@ function renderInspector(){
   if(!editing){el.innerHTML=`<div class="empty">Select a mod, or click <b>+ Add mod</b>.</div>`;return;}
   const e=editing, isNew=e.id==="__new__";
   const myLvl=isNew?null:computeLevels()[e.id];
-  const opts=(sel)=>state.mods.filter(m=>m.id!==e.id).map(m=>`<option value="${m.id}" ${sel===m.id?"selected":""}>${esc(m.name)}</option>`).join("");
+  const opts=(sel)=>state.mods.filter(m=>m.id!==e.id).map(m=>`<option value="${esc(m.id)}" ${sel===m.id?"selected":""}>${esc(m.name)}</option>`).join("");
   el.innerHTML=`<div class="insp">
     <h3>${isNew?"New mod":esc(e.name||"(unnamed)")}</h3>
     <div class="sub">${isNew?"add to catalog":esc(e.id)}${myLvl!=null?` &middot; hierarchy level <b style="color:var(--frost)">${myLvl}</b>`:""}</div>
@@ -82,7 +84,7 @@ function anyOfBlock(e){
       return `<span class="relchip ${bad?"bad":""}">${esc(t?t.name:id)}<button data-ag="${gi}" data-am="${mi}" class="rm-anyof">\u00d7</button></span>`;
     }).join("")||'<span class="hint">no options yet</span>';
     const cands=state.mods.filter(m=>m.id!==e.id&&!(g.mods||[]).includes(m.id)).slice().sort((a,b)=>a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
-    const opts=cands.map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join("");
+    const opts=cands.map(m=>`<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("");
     return `<div class="anyof-grp"><div class="chiprow">${chips}</div>
       <div class="addrel"><select class="add-anyof-mod" data-ag="${gi}"><option value="">+ add option\u2026</option>${opts}</select></div>
       <label class="anyof-x"><input type="checkbox" class="anyof-excl" data-ag="${gi}" ${g.exclusive?"checked":""}> mutually exclusive (only one active at a time)</label>
@@ -119,13 +121,13 @@ function relBlock(key,e){
     cands.forEach(m=>{
       const isDup=(e.requires||[]).some(r=>r.k==="mod"&&r.ref===m.id);
       const via=isDup?null:upstreamVia(e,m.id);
-      if(isDup) covered.push(`<option value="${m.id}" class="opt-cov">${esc(m.name)} — already added</option>`);
-      else if(via) covered.push(`<option value="${m.id}" class="opt-cov">${esc(m.name)} — ↑ upstream via ${esc(via)}</option>`);
-      else plain.push(`<option value="${m.id}">${esc(m.name)}</option>`);
+      if(isDup) covered.push(`<option value="${esc(m.id)}" class="opt-cov">${esc(m.name)} — already added</option>`);
+      else if(via) covered.push(`<option value="${esc(m.id)}" class="opt-cov">${esc(m.name)} — ↑ upstream via ${esc(via)}</option>`);
+      else plain.push(`<option value="${esc(m.id)}">${esc(m.name)}</option>`);
     });
     opts=plain.join("")+covered.join("");
   } else {
-    opts=cands.map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join("");
+    opts=cands.map(m=>`<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("");
   }
   const confirmBox=key==="requires"?`<div id="req-red-confirm" class="redwarn" hidden></div>`:"";
   return `<div class="rel-block"><div class="rt">${label}</div>
@@ -169,6 +171,9 @@ function deleteMod(){
   const id=editing.id;
   state.mods=state.mods.filter(m=>m.id!==id);
   // scrub references
-  state.mods.forEach(m=>{["requires","conflicts","loadAfter","patchFor"].forEach(k=>{m[k]=(m[k]||[]).filter(r=>!(r.k==="mod"&&r.ref===id));});});
+  state.mods.forEach(m=>{
+    ["requires","conflicts","loadAfter","patchFor"].forEach(k=>{m[k]=(m[k]||[]).filter(r=>!(r.k==="mod"&&r.ref===id));});
+    if(Array.isArray(m.anyOf))m.anyOf=m.anyOf.map(g=>({...g,mods:(g.mods||[]).filter(x=>x!==id)})).filter(g=>g.mods.length);  // F-16: also scrub any-of groups
+  });
   editing=null;selected=null;persist();render(true);
 }

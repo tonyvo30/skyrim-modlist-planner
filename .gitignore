@@ -1,1 +1,12 @@
 private/
+
+# Personal MO2 paths — kept out of source/history (F-3). Copy mo2-config.example.json
+# to mo2-config.json and fill in your own paths, or set the MO2_BASE / MO2_INSTANCE env vars.
+mo2-config.json
+
+# Python cache (F-4 / N-7)
+__pycache__/
+*.pyc
+
+# Local security-review notes (analyze the local setup + exposure)
+SECURITY-REVIEW*.md

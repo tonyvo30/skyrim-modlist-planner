@@ -58,11 +58,31 @@ let metaNoteByName={};
 function saveMetaNote(){try{localStorage.setItem("skyrim-planner-metanote",JSON.stringify(metaNoteByName));}catch(e){}}
 function loadMetaNote(){try{const r=localStorage.getItem("skyrim-planner-metanote");if(r)metaNoteByName=JSON.parse(r)||{};}catch(e){}}
 function noteFromMeta(name){return metaNoteByName[ikey(name)]||null;}
-// MO2 wraps a meta.ini "comments=" value in double quotes when it contains a comma (QSettings
-// escaping). Strip one surrounding pair and padding; '' means an empty note (skip it).
+// MO2 stores a meta.ini "comments=" value via Qt QSettings, which wraps it in double quotes and
+// backslash-escapes it when it contains a special char (comma, quote, …). Strip the surrounding
+// pair and reverse the escaping (F-13) so quotes/backslashes/newlines survive; '' means an empty
+// note (skip it). Mirrors clean_comment() in serve.py.
+const QSETTINGS_ESCAPES={"\\":"\\",'"':'"',n:"\n",t:"\t",r:"\r",a:"\x07",b:"\b",f:"\f",v:"\v","0":"\0"};
+function qsettingsUnescape(s){
+  let out="",i=0;
+  while(i<s.length){
+    const c=s[i];
+    if(c==="\\" && i+1<s.length){
+      const nxt=s[i+1];
+      if(nxt in QSETTINGS_ESCAPES){out+=QSETTINGS_ESCAPES[nxt];i+=2;continue;}
+      if(nxt==="x"){
+        const hex=s.slice(i+2,i+4);
+        if(/^[0-9a-fA-F]{2}$/.test(hex)){out+=String.fromCharCode(parseInt(hex,16));i+=4;continue;}
+      }
+      out+=c;i+=1;continue;
+    }
+    out+=c;i+=1;
+  }
+  return out;
+}
 function stripIniQuotes(value){
   let v=(value||"").trim();
-  if(v.length>=2 && v[0]==='"' && v[v.length-1]==='"') v=v.slice(1,-1);
+  if(v.length>=2 && v[0]==='"' && v[v.length-1]==='"') return qsettingsUnescape(v.slice(1,-1)).trim();
   return v.trim();
 }
 // The placeholder buildEntry stamps on a new mod that has no MO2 note. It doubles as a provenance
@@ -95,24 +115,25 @@ function parseMO2Grouped(txt){
   const toks=[];
   (txt||"").split(/\r?\n/).forEach(line=>{
     let l=line.trim();if(!l||l[0]==="#")return;
-    let enabled=true,name=l;
+    let enabled=true,name=l,foreign=false;
     if(l[0]==="+"){enabled=true;name=l.slice(1);}
     else if(l[0]==="-"){enabled=false;name=l.slice(1);}
-    else if(l[0]==="*"){enabled=true;name=l.slice(1);}
+    else if(l[0]==="*"){enabled=true;foreign=true;name=l.slice(1);}  // * = foreign/unmanaged: lives outside mods\, always active (F-14)
     else return;
     name=name.trim();
     if(/_separator$/i.test(name)){toks.push({sep:name.replace(/_separator$/i,"")});return;}
     name=name.replace(PREFIX_RE,"").trim();
     if(!name||/^bashed patch/i.test(name))return;
-    toks.push({name,enabled});
+    toks.push({name,enabled,foreign});
   });
-  const entries=[];let buf=[];const sepOrder=[],sepCount={};
+  // null-proto so a separator literally named "__proto__"/"constructor" can't corrupt the map (N-2)
+  const entries=[];let buf=[];const sepOrder=[],sepCount=Object.create(null);
   toks.forEach(t=>{
     if(t.sep!==undefined){
       buf.forEach(e=>e.sep=t.sep);
       if(!(t.sep in sepCount)){sepCount[t.sep]=0;sepOrder.push(t.sep);}
       sepCount[t.sep]+=buf.length; entries.push(...buf); buf=[];
-    } else buf.push({name:t.name,enabled:t.enabled,sep:null});
+    } else buf.push({name:t.name,enabled:t.enabled,foreign:t.foreign,sep:null});
   });
   buf.forEach(e=>e.sep=null); entries.push(...buf);   // trailing mods with no separator below them
   const seps=sepOrder.map(nm=>({name:nm,count:sepCount[nm]}));
@@ -128,10 +149,10 @@ function parseMO2(txt,selSet){
     const key=e.sep===null?NOSEP_KEY:e.sep;
     if(selSet) return selSet.has(key);
     return e.sep===null?true:!DEFAULT_SKIP_SEP_RE.test(e.sep);
-  }).map(e=>({name:e.name,enabled:e.enabled}));
+  }).map(e=>({name:e.name,enabled:e.enabled,foreign:e.foreign}));
 }
 /* ---------- separator multiselect: which MO2 separators to import / reconcile ---------- */
-const sepPick={import:{},rec:{}};   // which -> { [sepKey]: checked bool }; keyed by separator name (or NOSEP_KEY)
+const sepPick={import:Object.create(null),rec:Object.create(null)};   // which -> { [sepKey]: checked bool }; null-proto so a "__proto__" separator can't pollute (N-2); keyed by separator name (or NOSEP_KEY)
 function renderSepPicker(which){
   const txtId=which==="import"?"mo2-text":"rec-text", boxId=which==="import"?"import-seps":"rec-seps";
   const box=document.getElementById(boxId); if(!box)return;
@@ -152,14 +173,16 @@ function chosenSepSet(which){
   const choice=sepPick[which], ks=Object.keys(choice); if(!ks.length)return undefined;
   const s=new Set(); ks.forEach(k=>{if(choice[k]!==false)s.add(k);}); return s;
 }
-function buildEntry(name,enabled,asImported){
+function buildEntry(name,enabled,asImported,foreign){
   const metaCat=catFromMeta(name);   // real MO2 category from meta.ini, if a mods folder was read
   const metaNote=noteFromMeta(name); // MO2 "comments=" note, if a mods folder / sync provided one
   const t=resolveTemplate(name);
-  if(t){const c=clone(t);c.enabled=enabled;if(metaCat)c.cat=metaCat;if(metaNote&&!c.note)c.note=metaNote;return c;}  // meta.ini wins over template's default; keep a curated note if it has one
+  // A "*" modlist line is a foreign/unmanaged plugin (outside mods\): mark it external so Reconcile
+  // — which matches against the managed mods\ tree — never flags it as a false orphan (F-14).
+  if(t){const c=clone(t);c.enabled=enabled;if(metaCat)c.cat=metaCat;if(metaNote&&!c.note)c.note=metaNote;if(foreign)c.external=true;return c;}  // meta.ini wins over template's default; keep a curated note if it has one
   // Unknown (non-template) mod: flag needsReview so it surfaces in the review queue until you've
   // wired its dependencies/fields. Template-matched mods come pre-wired, so they are not flagged.
-  return {id:uniqId(slug(name)),name,cat:metaCat||(asImported?"Imported":"Other"),type:itype(name),enabled,pin:"",requires:[],conflicts:[],loadAfter:[],note:metaNote||MO2_DEFAULT_NOTE,needsReview:true,addedAt:Date.now()};
+  return {id:uniqId(slug(name)),name,cat:metaCat||(asImported?"Imported":"Other"),type:itype(name),enabled,external:!!foreign,pin:"",requires:[],conflicts:[],loadAfter:[],note:metaNote||MO2_DEFAULT_NOTE,needsReview:true,addedAt:Date.now()};
 }
 // pull in any known template a required mod-ref points to but the profile didn't list (e.g. SKSE installed to root)
 function closureAddMissing(list){
@@ -167,9 +190,24 @@ function closureAddMissing(list){
   while(changed&&guard++<25){changed=false;
     list.slice().forEach(m=>{(m.requires||[]).forEach(r=>{
       if(r.k==="mod"&&!ids.has(r.ref)){const t=DEFAULT_CATALOG.find(x=>x.id===r.ref);
-        if(t){const c=clone(t);c.enabled=true;c.note=(c.note?c.note+" ":"")+"(auto-added: required but not in profile)";list.push(c);ids.add(c.id);changed=true;}}
+        // flag for the review queue rather than silently enabling (N-13)
+        if(t){const c=clone(t);c.enabled=true;c.needsReview=true;c.note=(c.note?c.note+" ":"")+"(auto-added: required but not in profile)";list.push(c);ids.add(c.id);changed=true;}}
     });});
   }
+}
+// Match a modlist entry name to an existing planner mod. Try the template id, then an EXACT
+// case-insensitive name match, and only THEN the lossy ikey() as a last resort (F-7). ikey strips
+// all non-alphanumerics, so "SkyUI SE" == "SkyUI" and "SKSE 64" == "SKSE64" — matching exactly
+// first stops a merge from overwriting the wrong mod, and stops Reconcile from false-orphaning the
+// true one (which the one-click Delete would then remove). Both call sites use this, so merge and
+// reconcile always agree on what a name resolves to.
+function findExistingMod(name){
+  const t=resolveTemplate(name);
+  if(t) return byId(t.id)||null;                                   // template-matched: identity IS the template id
+  const low=name.toLowerCase();
+  return state.mods.find(m=>(m.name||"").toLowerCase()===low)      // exact, case-insensitive
+      || state.mods.find(m=>ikey(m.name)===ikey(name))             // lossy fallback (last resort)
+      || null;
 }
 function doImport(mode){
   const asImported=document.getElementById("mo2-cat").checked;
@@ -177,20 +215,19 @@ function doImport(mode){
   if(!entries.length){toast("Nothing to import — paste or load a modlist first");return;}
   let added=0,updated=0;
   if(mode==="replace"){
-    const next=[],seen={};
-    entries.forEach(({name,enabled})=>{
-      const e=buildEntry(name,enabled,asImported);
+    const next=[],seen=Object.create(null);
+    entries.forEach(({name,enabled,foreign})=>{
+      const e=buildEntry(name,enabled,asImported,foreign);
       if(seen[e.id]){if(enabled)seen[e.id].enabled=true;return;}
       seen[e.id]=e;next.push(e);
     });
     closureAddMissing(next);
     state.mods=next;
   }else{
-    entries.forEach(({name,enabled})=>{
-      const t=resolveTemplate(name);
-      const existing=t?state.mods.find(m=>m.id===t.id):state.mods.find(m=>ikey(m.name)===ikey(name));
-      if(existing){existing.enabled=enabled;const mc=catFromMeta(name);if(mc)existing.cat=mc;backfillMo2Note(existing,name);updated++;}  // meta.ini category + note applied if available
-      else{state.mods.push(buildEntry(name,enabled,asImported));added++;}
+    entries.forEach(({name,enabled,foreign})=>{
+      const existing=findExistingMod(name);
+      if(existing){existing.enabled=enabled;const mc=catFromMeta(name);if(mc)existing.cat=mc;backfillMo2Note(existing,name);if(foreign)existing.external=true;updated++;}  // meta.ini category + note applied if available
+      else{state.mods.push(buildEntry(name,enabled,asImported,foreign));added++;}
     });
   }
   mImport.classList.remove("show");document.getElementById("mo2-text").value="";resetImportModal();
@@ -216,8 +253,7 @@ let recOrphans=[];
 function matchedIdsFromModlist(entries){
   const matched=new Set();
   entries.forEach(({name})=>{
-    const t=resolveTemplate(name);
-    const m=t?byId(t.id):state.mods.find(x=>ikey(x.name)===ikey(name));
+    const m=findExistingMod(name);   // same exact-first matching the merge-import uses (F-7)
     if(m)matched.add(m.id);
   });
   return matched;
@@ -255,7 +291,10 @@ function deleteSelectedOrphans(){
   if(!ids.size)return;
   state.mods=state.mods.filter(m=>!ids.has(m.id));
   // scrub references to the deleted mods
-  state.mods.forEach(m=>{["requires","conflicts","loadAfter","patchFor"].forEach(k=>{m[k]=(m[k]||[]).filter(r=>!(r&&r.k==="mod"&&ids.has(r.ref)));});});
+  state.mods.forEach(m=>{
+    ["requires","conflicts","loadAfter","patchFor"].forEach(k=>{m[k]=(m[k]||[]).filter(r=>!(r&&r.k==="mod"&&ids.has(r.ref)));});
+    if(Array.isArray(m.anyOf))m.anyOf=m.anyOf.map(g=>({...g,mods:(g.mods||[]).filter(id=>!ids.has(id))})).filter(g=>g.mods.length);  // F-16: drop deleted ids from any-of groups, and empty groups
+  });
   if(ids.has(selected)){selected=null;editing=null;}
   persist();
   const n=ids.size;

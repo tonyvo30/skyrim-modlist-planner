@@ -28,11 +28,6 @@ let showOnlyReview=false;     // session filter: show only mods flagged needsRev
 let msgSevHidden=new Set();   // message severities hidden in the Messages tab
 function saveMsgSev(){try{localStorage.setItem("skyrim-planner-msgsev",JSON.stringify([...msgSevHidden]));}catch(e){}}
 function loadMsgSev(){try{const r=localStorage.getItem("skyrim-planner-msgsev");if(r)JSON.parse(r).forEach(s=>msgSevHidden.add(s));}catch(e){}}
-let db = null, docRef = null, saveTimer = null;
-const myWriter = Math.random().toString(36).slice(2) + "-" + Date.now();
-let pendingWrite = false;
-let lastSynced = null;  // JSON of mods that matches the server; local != this means we have unsynced edits
-
 function clone(x){return JSON.parse(JSON.stringify(x));}
 function byId(id){return state.mods.find(m=>m.id===id);}
 function slug(s){return s.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,48)||("mod-"+Math.random().toString(36).slice(2,7));}

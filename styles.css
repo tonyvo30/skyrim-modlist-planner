@@ -48,6 +48,8 @@ img{max-width:100%}
   .persist .dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}
   .persist.synced .dot{background:var(--good)}
   .persist.local .dot{background:var(--warn)}
+  .persist.error{color:var(--bad)}
+  .persist.error .dot{background:var(--bad)}
 
   /* Layout */
   main{flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) 400px;min-height:0}

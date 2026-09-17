@@ -59,7 +59,19 @@ const SEED_CATS={
 const LEGACY_CAT={core:"Utilities",diag:"Modders Resources",fw:"Utilities",dist:"Modders Resources",fix:"Bug Fixes",perf:"Utilities",ui:"User Interface",beth:"Bug Fixes",enb:"Visuals and Graphics",up:"Visuals and Graphics",weather:"Visuals and Graphics",content:"Unmanaged",imported:"Imported",other:"Other"};
 // capability layer removed: convert any legacy {k:"cap"} refs into direct {k:"mod"} links
 // (resolved through the providers declared in the same data), then drop the provides field.
+// Same grammar as slug() in 30-state.js, but defined here (loaded first) so migrateMods can run at
+// seed-load time in 20-catalog.js without depending on a later file. Keep the two in sync.
+function slugId(v){
+  return String(v==null?"":v).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,48)
+    || ("mod-"+Math.random().toString(36).slice(2,7));
+}
 function migrateMods(list){
+  // Sanitize every id to the in-app slug grammar ([a-z0-9-]) BEFORE anything reads it. Ids created
+  // in-app are already slugged, but Import-JSON / a hand-edited localStorage blob can carry an
+  // arbitrary string; an unescaped id used as an <option value="…"> is a stored-XSS sink. Legitimate
+  // ids are already slug-shaped, so this is a no-op for real data and only neutralizes hostile ones.
+  // Also blocks an imported mod from claiming ROOT_ID (slugId("__skyrim__") -> "skyrim").
+  (list||[]).forEach(m=>{if(m&&typeof m==="object")m.id=slugId(m.id);});
   const provMap={};(list||[]).forEach(x=>(x.provides||[]).forEach(cap=>{(provMap[cap]=provMap[cap]||[]).push(x.id);}));
   (list||[]).forEach(m=>{
     if(SEED_CATS[m.id])m.cat=SEED_CATS[m.id];           // known seed mod → its real MO2 category

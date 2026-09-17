@@ -19,9 +19,37 @@ function upstreamVia(m,targetId){
   return null;
 }
 
+// requires-cycle detection (F-15): a hard-requires loop (A needs B, B needs A, or A needs itself)
+// can never be satisfied and also makes computeLevels() memoize a wrong level. Find each cycle once
+// with Tarjan's strongly-connected components over the hard-requires graph.
+function requiresCycles(){
+  const index=new Map(),low=new Map(),onStack=new Set(),stack=[],sccs=[];let idx=0;
+  function strongconnect(v){
+    index.set(v,idx);low.set(v,idx);idx++;stack.push(v);onStack.add(v);
+    for(const w of depsOfId(v)){
+      if(!index.has(w)){strongconnect(w);low.set(v,Math.min(low.get(v),low.get(w)));}
+      else if(onStack.has(w))low.set(v,Math.min(low.get(v),index.get(w)));
+    }
+    if(low.get(v)===index.get(v)){
+      const comp=[];let w;do{w=stack.pop();onStack.delete(w);comp.push(w);}while(w!==v);
+      sccs.push(comp);
+    }
+  }
+  state.mods.forEach(m=>{if(!index.has(m.id))strongconnect(m.id);});
+  // a real cycle is an SCC of >1 node, or a single node that requires itself
+  return sccs.filter(c=>c.length>1 || depsOfId(c[0]).includes(c[0]));
+}
+
 /* ---------- validation ---------- */
 function validate(){
   const warns = [];
+
+  // requires cycles: one error per member so every mod in the loop is flagged (F-15)
+  requiresCycles().forEach(cyc=>{
+    const names=cyc.map(id=>{const t=byId(id);return t?t.name:id;});
+    const loop=names.join(" → ")+" → "+names[0];
+    cyc.forEach(id=>warns.push({sev:"error",mod:id,type:"cycle",msg:`requires cycle: ${loop} — this dependency loop can never be satisfied`,focus:cyc[0]}));
+  });
 
   state.mods.forEach(m=>{
     // dangling refs (always check)

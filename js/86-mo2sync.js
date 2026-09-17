@@ -30,15 +30,20 @@ function mo2ApiUrl(path,extra){
   const qs=p.toString();
   return path+(qs?("?"+qs):"");
 }
+// fetch an /api endpoint with a hard timeout so a hung serve.py can't leave Sync stuck "Syncing…" (N-11)
+function mo2Fetch(path,extra,ms){
+  return fetch(mo2ApiUrl(path,extra),{cache:"no-store",signal:AbortSignal.timeout(ms||15000)});
+}
+function mo2ErrText(e){return e&&e.name==="TimeoutError"?"timed out (is serve.py responding?)":(e&&e.message)||"network error";}
 // serve.py runs over http(s) on localhost; a file:// page can't reach it, so sync is unavailable there.
 function mo2ServedContext(){return location.protocol==="http:"||location.protocol==="https:";}
 
 // which separator groups Sync includes: { [separatorName|NOSEP_KEY]: bool }. Persisted, so a
 // one-click Sync honours the choices you set in the Separators… dialog. Untouched groups default
 // to included, except Output/WIP which default to skipped (same rule as the Import picker).
-let mo2SepChoice={};
+let mo2SepChoice=Object.create(null);   // null-proto so a "__proto__" separator can't pollute (N-2)
 function saveMo2SepChoice(){try{localStorage.setItem("skyrim-planner-mo2sepchoice",JSON.stringify(mo2SepChoice));}catch(e){}}
-function loadMo2SepChoice(){try{const r=localStorage.getItem("skyrim-planner-mo2sepchoice");if(r)mo2SepChoice=JSON.parse(r)||{};}catch(e){}}
+function loadMo2SepChoice(){try{const r=localStorage.getItem("skyrim-planner-mo2sepchoice");if(r)mo2SepChoice=Object.assign(Object.create(null),JSON.parse(r)||{});}catch(e){}}
 function mo2SepIncluded(key){
   if(key in mo2SepChoice) return mo2SepChoice[key]!==false;
   return key===NOSEP_KEY ? true : !DEFAULT_SKIP_SEP_RE.test(key);
@@ -60,7 +65,7 @@ async function mo2Init(){
   // file:// can't talk to serve.py — disable sync outright (no failed fetch, no console noise)
   if(!mo2ServedContext()){ mo2Available=false; updateMo2UI(); return; }
   try{
-    const resp=await fetch(mo2ApiUrl("/api/profiles"),{cache:"no-store"});
+    const resp=await mo2Fetch("/api/profiles",null,8000);   // short probe: don't hang boot if something's on the port but not answering
     if(!resp.ok) throw new Error("no api");
     const data=await resp.json();
     if(!Array.isArray(data.profiles)) throw new Error("bad api");
@@ -80,7 +85,7 @@ async function mo2Sync(){
   const syncBtn=document.getElementById("mo2-sync"), prevLabel=syncBtn?syncBtn.textContent:"";
   if(syncBtn){syncBtn.disabled=true;syncBtn.textContent="Syncing…";}
   try{
-    const resp=await fetch(mo2ApiUrl("/api/sync",{profile:mo2Profile}),{cache:"no-store"});
+    const resp=await mo2Fetch("/api/sync",{profile:mo2Profile},20000);   // reads every mod's meta.ini; allow more time
     const data=await resp.json();
     if(!resp.ok||data.error){toast("Sync failed — "+(data.error||("HTTP "+resp.status)));return;}
 
@@ -98,17 +103,16 @@ async function mo2Sync(){
 
     // merge — identical rules to Import → Merge/update
     let added=0,updated=0,noted=0;   // noted = existing mods whose default/empty note was backfilled from MO2
-    entries.forEach(({name,enabled})=>{
-      const template=resolveTemplate(name);
-      const existing=template?state.mods.find(m=>m.id===template.id):state.mods.find(m=>ikey(m.name)===ikey(name));
-      if(existing){existing.enabled=enabled;const metaCat=catFromMeta(name);if(metaCat)existing.cat=metaCat;if(backfillMo2Note(existing,name))noted++;updated++;}
-      else{state.mods.push(buildEntry(name,enabled,false));added++;}
+    entries.forEach(({name,enabled,foreign})=>{
+      const existing=findExistingMod(name);   // exact-first matching, same as Import (F-7)
+      if(existing){existing.enabled=enabled;const metaCat=catFromMeta(name);if(metaCat)existing.cat=metaCat;if(foreign)existing.external=true;if(backfillMo2Note(existing,name))noted++;updated++;}
+      else{state.mods.push(buildEntry(name,enabled,false,foreign));added++;}
     });
     selected=null;editing=null;persist();render(true);
     toast(`Synced ${data.profile} — ${added} new, ${updated} updated · ${data.modsWithCategory||0} categories · ${data.modsWithNote||0} notes`+(noted?` (${noted} backfilled)`:``));
   }catch(e){
     console.error("MO2 sync failed",e);
-    toast("Sync failed — "+(e&&e.message||"network error"));
+    toast("Sync failed — "+mo2ErrText(e));
   }finally{
     if(syncBtn){syncBtn.disabled=false;syncBtn.textContent=prevLabel||"Sync from MO2";}
   }
@@ -142,11 +146,11 @@ async function openMo2Seps(){
   if(box)box.innerHTML=`<div class="hint">Loading ${esc(mo2Profile)}…</div>`;
   if(modal)modal.classList.add("show");
   try{
-    const resp=await fetch(mo2ApiUrl("/api/modlist",{profile:mo2Profile}),{cache:"no-store"});
+    const resp=await mo2Fetch("/api/modlist",{profile:mo2Profile},15000);
     const data=await resp.json();
     if(!resp.ok||data.error){if(box)box.innerHTML=`<div class="hint">Couldn't load modlist — ${esc(data.error||("HTTP "+resp.status))}</div>`;return;}
     renderMo2SepList(data.modlist||"");
-  }catch(e){ if(box)box.innerHTML=`<div class="hint">Couldn't load modlist — ${esc(e&&e.message||"network error")}</div>`; }
+  }catch(e){ if(box)box.innerHTML=`<div class="hint">Couldn't load modlist — ${esc(mo2ErrText(e))}</div>`; }
 }
 
 /* ---- Paths dialog: which MO2 folders Sync reads from ---- */
@@ -167,7 +171,7 @@ async function saveMo2InstanceDialog(){
   // re-probe with the new paths so the profile list + defaults refresh
   const bs=document.getElementById("mo2-inst-base-state"), cs=document.getElementById("mo2-inst-cat-state");
   try{
-    const data=await fetch(mo2ApiUrl("/api/profiles"),{cache:"no-store"}).then(r=>r.json());
+    const data=await mo2Fetch("/api/profiles",null,8000).then(r=>r.json());
     mo2Profiles=Array.isArray(data.profiles)?data.profiles:[];
     if(data.defaults)mo2Defaults=data.defaults;
     if(mo2Profiles.length && !mo2Profiles.includes(mo2Profile))mo2Profile=mo2Profiles[0];

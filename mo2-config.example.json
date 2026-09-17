@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy this file to mo2-config.json (git-ignored) and fill in your own MO2 paths, or set the MO2_BASE / MO2_INSTANCE environment variables instead. serve.py reads these so your personal paths never live in source or git history.",
+  "base": "D:\\Path\\To\\Mod Organizer 2",
+  "instance": "C:\\Users\\<you>\\AppData\\Local\\ModOrganizer\\<Instance Name>"
+}

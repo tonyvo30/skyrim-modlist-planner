@@ -10,14 +10,21 @@ and is version-controlled.
 
 ## Run locally
 
-No build step. Serve the folder over HTTP (needed because it loads `js/*` and fonts):
+No build step. Two ways to serve the folder over HTTP (needed because it loads
+`js/*` and fonts):
 
-```
-python -m http.server 8000
-```
+- **`python serve.py`** (recommended) — serves the app **and** the read-only
+  `/api/*` endpoints that power one-click **Sync from MO2**. Defaults to port 8000
+  (`python serve.py 8080` for another). It reads your MO2 files by path; tell it
+  where they are with a `mo2-config.json` (copy `mo2-config.example.json`) or the
+  `MO2_BASE` / `MO2_INSTANCE` env vars, or set them later in the app's **Paths**
+  dialog. It binds `127.0.0.1` only.
+- **`python -m http.server 8000`** — plain static serving. The app works, but the
+  **Sync from MO2** button stays hidden (no `/api`); **Import MO2** still works.
 
-then open http://localhost:8000/ . (Opening `index.html` directly via `file://`
-mostly works but a local server avoids fetch/CORS quirks.)
+Both default to port 8000, so run only one at a time. Then open
+http://localhost:8000/ . (Opening `index.html` via `file://` mostly works, but a
+local server avoids fetch/CORS quirks and is required for Sync.)
 
 ## Data & persistence
 
@@ -37,5 +44,9 @@ mostly works but a local server avoids fetch/CORS quirks.)
 
 ## External dependencies (CDN)
 
+Pinned versions, loaded with Subresource Integrity and constrained by a
+Content-Security-Policy `<meta>` in `index.html`:
+
 - Cytoscape 3.30.2 (cdnjs)
+- fcose layout: layout-base 2.0.1, cose-base 2.2.0, cytoscape-fcose 2.2.0 (jsdelivr)
 - Google Fonts: Cinzel, IBM Plex Sans, IBM Plex Mono
