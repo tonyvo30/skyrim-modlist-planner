@@ -140,28 +140,31 @@ function renderMo2SepList(modlistText){
   box.querySelector('[data-sp="all"]').onclick=()=>{keys.forEach(k=>mo2SepChoice[k.key]=true);saveMo2SepChoice();renderMo2SepList(modlistText);};
   box.querySelector('[data-sp="none"]').onclick=()=>{keys.forEach(k=>mo2SepChoice[k.key]=false);saveMo2SepChoice();renderMo2SepList(modlistText);};
 }
-async function openMo2Seps(){
-  if(!mo2Available){toast("Run the planner with serve.py to configure sync");return;}
-  const modal=document.getElementById("modal-mo2seps"), box=document.getElementById("mo2sep-list");
-  if(box)box.innerHTML=`<div class="hint">Loading ${esc(mo2Profile)}…</div>`;
-  if(modal)modal.classList.add("show");
+/* ---- Settings modal: MO2 paths + separators (add more sections here later, e.g. backups) ---- */
+// (Re)render the separators section. Needs a live modlist from serve.py, so it degrades to a hint
+// when sync isn't available or no profile is picked.
+async function loadSettingsSeps(){
+  const box=document.getElementById("mo2sep-list"); if(!box)return;
+  if(!mo2Available){ box.innerHTML=`<div class="hint">Run the planner with <code>serve.py</code> to load a profile and choose separators.</div>`; return; }
+  if(!mo2Profile){ box.innerHTML=`<div class="hint">Pick an MO2 profile in the toolbar first.</div>`; return; }
+  box.innerHTML=`<div class="hint">Loading ${esc(mo2Profile)}…</div>`;
   try{
     const resp=await mo2Fetch("/api/modlist",{profile:mo2Profile},15000);
     const data=await resp.json();
-    if(!resp.ok||data.error){if(box)box.innerHTML=`<div class="hint">Couldn't load modlist — ${esc(data.error||("HTTP "+resp.status))}</div>`;return;}
+    if(!resp.ok||data.error){box.innerHTML=`<div class="hint">Couldn't load modlist — ${esc(data.error||("HTTP "+resp.status))}</div>`;return;}
     renderMo2SepList(data.modlist||"");
-  }catch(e){ if(box)box.innerHTML=`<div class="hint">Couldn't load modlist — ${esc(mo2ErrText(e))}</div>`; }
+  }catch(e){ box.innerHTML=`<div class="hint">Couldn't load modlist — ${esc(mo2ErrText(e))}</div>`; }
 }
-
-/* ---- Paths dialog: which MO2 folders Sync reads from ---- */
-function openMo2Instance(){
-  const modal=document.getElementById("modal-mo2instance"); if(!modal)return;
+function openSettings(){
+  const modal=document.getElementById("modal-settings"); if(!modal)return;
+  // MO2 paths — prefill the remembered overrides; placeholders show serve.py's defaults
   const baseInput=document.getElementById("mo2-inst-base"), pathInput=document.getElementById("mo2-inst-path");
   if(baseInput){ baseInput.value=mo2BaseDir; baseInput.placeholder=mo2Defaults.base||"…folder with mods\\ profiles\\ downloads\\"; }
   if(pathInput){ pathInput.value=mo2InstancePath; pathInput.placeholder=mo2Defaults.instance||"…folder with categories.dat"; }
   const bs=document.getElementById("mo2-inst-base-state"), cs=document.getElementById("mo2-inst-cat-state");
   if(bs)bs.textContent=""; if(cs)cs.textContent="";
   modal.classList.add("show");
+  loadSettingsSeps();
 }
 async function saveMo2InstanceDialog(){
   const baseInput=document.getElementById("mo2-inst-base"), pathInput=document.getElementById("mo2-inst-path");
@@ -178,22 +181,18 @@ async function saveMo2InstanceDialog(){
     saveMo2Profile(); updateMo2UI();
     if(bs)bs.textContent=data.baseFound?`✓ found · ${mo2Profiles.length} profile${mo2Profiles.length!==1?"s":""}`:"⚠ base directory not found — check the path";
     if(cs)cs.textContent=data.categoriesFound?"✓ categories.dat found":"categories.dat not found here — using the built-in category map";
-    if(data.baseFound && mo2Profiles.length){ document.getElementById("modal-mo2instance").classList.remove("show"); toast("Paths set — "+mo2Profiles.length+" profiles"); }
+    if(data.baseFound && mo2Profiles.length){ toast("Paths set — "+mo2Profiles.length+" profiles"); loadSettingsSeps(); }  // refresh separators for the (possibly new) profile; keep Settings open
   }catch(e){ if(bs)bs.textContent="⚠ couldn't reach serve.py"; }
 }
 
 /* wiring */
 (function(){
   const profileSel=document.getElementById("mo2-profile"), syncBtn=document.getElementById("mo2-sync"),
-        sepBtn=document.getElementById("mo2-seps"), sepClose=document.getElementById("mo2sep-close"),
-        sepModal=document.getElementById("modal-mo2seps"),
-        instBtn=document.getElementById("mo2-instance"), instModal=document.getElementById("modal-mo2instance"),
-        instCancel=document.getElementById("mo2-inst-cancel"), instSave=document.getElementById("mo2-inst-save");
+        setBtn=document.getElementById("btn-settings"), setModal=document.getElementById("modal-settings"),
+        setClose=document.getElementById("settings-close"), instSave=document.getElementById("mo2-inst-save");
   if(profileSel)profileSel.onchange=()=>{mo2Profile=profileSel.value;saveMo2Profile();};
   if(syncBtn)syncBtn.onclick=mo2Sync;
-  if(sepBtn)sepBtn.onclick=openMo2Seps;
-  if(sepClose)sepClose.onclick=()=>{if(sepModal)sepModal.classList.remove("show");};
-  if(instBtn)instBtn.onclick=openMo2Instance;
-  if(instCancel)instCancel.onclick=()=>{if(instModal)instModal.classList.remove("show");};
+  if(setBtn)setBtn.onclick=openSettings;
+  if(setClose)setClose.onclick=()=>{if(setModal)setModal.classList.remove("show");};
   if(instSave)instSave.onclick=saveMo2InstanceDialog;
 })();
