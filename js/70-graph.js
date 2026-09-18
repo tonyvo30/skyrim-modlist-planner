@@ -352,3 +352,16 @@ function setAdultMode(m){
   render(true);   // rebuild excludes/includes adult nodes and repacks the graph + list
 }
 function flash(id){const n=cy.$id(id);if(!n.length)return;n.addClass("flash");setTimeout(()=>n.removeClass("flash"),900);}
+// Center and zoom the graph in on a node, then flash it. Returns false when the node can't be
+// focused (graph not ready, or the node is filtered/hidden out of view) so callers can explain why.
+function focusNode(id){
+  if(!cyReady||!cy)return false;
+  const n=cy.$id(id);
+  if(!n.length||n.style("display")==="none")return false;
+  // zoom in (never out), and pan so the node lands at the viewport centre. Computing pan explicitly
+  // (renderedX = zoom*modelX + panX) is deterministic — cytoscape's combined center+zoom can be flaky.
+  const level=Math.max(cy.zoom(),1.6), p=n.position();
+  cy.animate({zoom:level,pan:{x:cy.width()/2-level*p.x,y:cy.height()/2-level*p.y}},{duration:300,easing:"ease-out"});
+  flash(id);
+  return true;
+}

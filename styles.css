@@ -171,7 +171,10 @@ img{max-width:100%}
   .mmeta{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--faint)}
 
   /* Inspector / form */
+  .insp-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
   .insp h3{font-family:"Cinzel",serif;font-size:16px;margin:0 0 3px}
+  .icon-btn{flex:none;display:inline-flex;align-items:center;justify-content:center;padding:6px 8px;line-height:0}
+  .icon-btn svg{display:block}
   .insp .sub{color:var(--faint);font-size:12px;margin-bottom:14px;font-family:"IBM Plex Mono",monospace}
   .field{margin-bottom:12px}
   .field label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);

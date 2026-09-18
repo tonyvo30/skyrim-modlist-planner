@@ -31,7 +31,7 @@ function renderInspector(){
   const myLvl=isNew?null:computeLevels()[e.id];
   const opts=(sel)=>state.mods.filter(m=>m.id!==e.id).map(m=>`<option value="${esc(m.id)}" ${sel===m.id?"selected":""}>${esc(m.name)}</option>`).join("");
   el.innerHTML=`<div class="insp">
-    <h3>${isNew?"New mod":esc(e.name||"(unnamed)")}</h3>
+    <div class="insp-head"><h3>${isNew?"New mod":esc(e.name||"(unnamed)")}</h3>${isNew?"":`<button class="btn icon-btn" id="i-zoom" title="Zoom to this node in the graph" aria-label="Zoom to this node in the graph"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="10.6" y1="10.6" x2="14" y2="14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>`}</div>
     <div class="sub">${isNew?"add to catalog":esc(e.id)}${myLvl!=null?` &middot; hierarchy level <b style="color:var(--frost)">${myLvl}</b>`:""}</div>
     <div class="field"><label>Name</label><input id="f-name" value="${esc(e.name)}"></div>
     <div class="row2">
@@ -74,6 +74,8 @@ function renderInspector(){
   document.getElementById("i-save").onclick=saveMod;
   document.getElementById("i-cancel").onclick=()=>{editing=null;selected=null;render(false);};
   const del=document.getElementById("i-del");if(del)del.onclick=deleteMod;
+  const zoom=document.getElementById("i-zoom");
+  if(zoom)zoom.onclick=()=>{ if(!focusNode(e.id)) toast("Can't zoom to this mod — it's filtered out of the graph, or the graph isn't ready."); };
 }
 
 function anyOfBlock(e){
